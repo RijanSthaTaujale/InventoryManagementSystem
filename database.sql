@@ -150,6 +150,25 @@ CREATE TABLE IF NOT EXISTS `customers` (
   INDEX `idx_email` (`email`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `fb_pages` (
+  `id`         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `name`       VARCHAR(150)  NOT NULL,
+  `status`     ENUM('active','inactive') NOT NULL DEFAULT 'active',
+  `created_by` INT UNSIGNED  DEFAULT NULL,
+  `created_at` DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`created_by`) REFERENCES `users`(`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `customer_blacklist` (
+  `id`             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `phone`          VARCHAR(20)   NOT NULL,
+  `reason`         TEXT          DEFAULT NULL,
+  `blacklisted_by` INT UNSIGNED  DEFAULT NULL,
+  `created_at`     DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`blacklisted_by`) REFERENCES `users`(`id`) ON DELETE SET NULL,
+  UNIQUE INDEX `idx_phone` (`phone`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ============================================================
 -- 5. ORDERS
 -- ============================================================
@@ -162,6 +181,7 @@ CREATE TABLE IF NOT EXISTS `orders` (
   `customer_phone`  VARCHAR(20)    DEFAULT NULL,
   `customer_email`  VARCHAR(180)   DEFAULT NULL,
   `customer_address` TEXT          DEFAULT NULL,
+  `fb_page_id`      INT UNSIGNED   DEFAULT NULL COMMENT 'Facebook page this order was attributed to',
   `status`          ENUM('new','confirmed','pending','cancelled','dispatched','delivered','returned','in_courier') NOT NULL DEFAULT 'new',
   `subtotal`        DECIMAL(12,2)  NOT NULL DEFAULT 0,
   `discount`        DECIMAL(12,2)  NOT NULL DEFAULT 0,
@@ -169,18 +189,24 @@ CREATE TABLE IF NOT EXISTS `orders` (
   `total`           DECIMAL(12,2)  NOT NULL DEFAULT 0,
   `shipping_method` VARCHAR(100)   DEFAULT NULL,
   `shipping_cost`   DECIMAL(10,2)  NOT NULL DEFAULT 0,
+  `courier_name`    VARCHAR(100)   DEFAULT NULL,
+  `courier_charge`  DECIMAL(10,2)  NOT NULL DEFAULT 0,
   `payment_method`  VARCHAR(80)    DEFAULT NULL,
   `payment_status`  ENUM('unpaid','paid','partial','refunded') NOT NULL DEFAULT 'unpaid',
   `remarks`         TEXT           DEFAULT NULL COMMENT 'Staff message / notes',
+  `supervisor_remarks` TEXT        DEFAULT NULL,
   `assigned_to`     INT UNSIGNED   DEFAULT NULL COMMENT 'Staff user handling this order',
   `dispatched_by`   INT UNSIGNED   DEFAULT NULL,
   `dispatched_at`   DATETIME       DEFAULT NULL,
   `delivered_at`    DATETIME       DEFAULT NULL,
+  `stock_deducted`  TINYINT(1)     NOT NULL DEFAULT 0 COMMENT 'Set once stock is deducted at dispatch',
+  `stock_restored`  TINYINT(1)     NOT NULL DEFAULT 0 COMMENT 'Set once stock is restored at return',
   `created_by`      INT UNSIGNED   DEFAULT NULL,
   `updated_by`      INT UNSIGNED   DEFAULT NULL,
   `created_at`      DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`      DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (`customer_id`)   REFERENCES `customers`(`id`) ON DELETE SET NULL,
+  FOREIGN KEY (`fb_page_id`)    REFERENCES `fb_pages`(`id`)  ON DELETE SET NULL,
   FOREIGN KEY (`assigned_to`)   REFERENCES `users`(`id`)     ON DELETE SET NULL,
   FOREIGN KEY (`dispatched_by`) REFERENCES `users`(`id`)     ON DELETE SET NULL,
   FOREIGN KEY (`created_by`)    REFERENCES `users`(`id`)     ON DELETE SET NULL,
@@ -188,6 +214,7 @@ CREATE TABLE IF NOT EXISTS `orders` (
   INDEX `idx_status`     (`status`),
   INDEX `idx_customer`   (`customer_id`),
   INDEX `idx_created_at` (`created_at`),
+  INDEX `idx_phone_created` (`customer_phone`, `created_at`),
   FULLTEXT INDEX `ft_order` (`order_id`, `customer_name`, `customer_phone`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -228,7 +255,7 @@ CREATE TABLE IF NOT EXISTS `order_status_log` (
 CREATE TABLE IF NOT EXISTS `stock_adjustments` (
   `id`           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   `product_id`   INT UNSIGNED  NOT NULL,
-  `type`         ENUM('add','remove','adjustment','return','damaged','initial') NOT NULL DEFAULT 'adjustment',
+  `type`         ENUM('add','remove','adjustment','initial','sale','return','damaged') NOT NULL DEFAULT 'adjustment',
   `qty_before`   INT           NOT NULL DEFAULT 0,
   `qty_change`   INT           NOT NULL COMMENT 'Positive = add, negative = remove',
   `qty_after`    INT           NOT NULL DEFAULT 0,
@@ -240,6 +267,18 @@ CREATE TABLE IF NOT EXISTS `stock_adjustments` (
   FOREIGN KEY (`adjusted_by`) REFERENCES `users`(`id`)    ON DELETE SET NULL,
   INDEX `idx_product`    (`product_id`),
   INDEX `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `damaged_products` (
+  `id`         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `product_id` INT UNSIGNED  NOT NULL,
+  `qty`        INT           NOT NULL,
+  `reason`     TEXT          DEFAULT NULL,
+  `logged_by`  INT UNSIGNED  DEFAULT NULL,
+  `created_at` DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`product_id`) REFERENCES `products`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`logged_by`)  REFERENCES `users`(`id`)    ON DELETE SET NULL,
+  INDEX `idx_product` (`product_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
