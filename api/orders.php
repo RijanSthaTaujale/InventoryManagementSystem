@@ -10,6 +10,35 @@ $isAdmin = $user['role'] === 'admin';
 $isSuper = $user['role'] === 'supervisor';
 $isStaff = $user['role'] === 'staff';
 
+// Applies qty_change (direction * item qty) to every product in an order's
+// line items, recalculates stock_status, and logs one stock_adjustments row
+// per item. direction: -1 to deduct (dispatch), +1 to restore (return).
+function adjustOrderStock(PDO $pdo, int $orderDbId, string $adjType, int $direction, int $userId, string $reason): void {
+    $items = $pdo->prepare("SELECT product_id, qty FROM order_items WHERE order_id=? AND product_id IS NOT NULL");
+    $items->execute([$orderDbId]);
+
+    foreach ($items->fetchAll() as $item) {
+        $productId = (int)$item['product_id'];
+        $qtyChange = $direction * (int)$item['qty'];
+
+        $row = $pdo->prepare("SELECT quantity, min_stock_level FROM products WHERE id=?");
+        $row->execute([$productId]);
+        $product = $row->fetch();
+        if (!$product) continue;
+
+        $qtyBefore = (int)$product['quantity'];
+        $qtyAfter  = max(0, $qtyBefore + $qtyChange);
+        $min       = (int)$product['min_stock_level'];
+        $stockStatus = $qtyAfter <= 0 ? 'outofstock' : ($qtyAfter <= 2 ? 'critical' : ($qtyAfter <= $min ? 'lowstock' : 'instock'));
+
+        $pdo->prepare("UPDATE products SET quantity=?, stock_status=? WHERE id=?")
+            ->execute([$qtyAfter, $stockStatus, $productId]);
+
+        $pdo->prepare("INSERT INTO stock_adjustments (product_id,type,qty_before,qty_change,qty_after,reason,adjusted_by) VALUES (?,?,?,?,?,?,?)")
+            ->execute([$productId, $adjType, $qtyBefore, $qtyAfter - $qtyBefore, $qtyAfter, $reason, $userId]);
+    }
+}
+
 // ── CREATE ORDER ─────────────────────────────────────────────
 if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $body = json_decode(file_get_contents('php://input'), true);
@@ -18,10 +47,13 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $customer_phone   = trim($body['customer_phone']   ?? '');
     $customer_email   = trim($body['customer_email']   ?? '');
     $customer_address = trim($body['customer_address'] ?? '');
+    $fb_page_id       = (int)($body['fb_page_id']      ?? 0) ?: null;
     $payment_method   = trim($body['payment_method']   ?? 'cash');
-    $payment_status   = trim($body['payment_status']   ?? 'unpaid');
+    $payment_status   = 'unpaid'; // always starts unpaid — not client-controlled
     $shipping_method  = trim($body['shipping_method']  ?? '');
     $shipping_cost    = (float)($body['shipping_cost'] ?? 0);
+    $courier_name     = trim($body['courier_name']     ?? '');
+    $courier_charge   = (float)($body['courier_charge'] ?? 0);
     $discount         = (float)($body['discount']      ?? 0);
     $discount_type    = trim($body['discount_type']    ?? 'fixed');
     $remarks          = trim($body['remarks']          ?? '');
@@ -29,6 +61,9 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (!$customer_name) {
         echo json_encode(['success' => false, 'message' => 'Customer name is required.']); exit;
+    }
+    if (!preg_match('/^\d{10}$/', $customer_phone)) {
+        echo json_encode(['success' => false, 'message' => 'Phone number must be exactly 10 digits.']); exit;
     }
     if (empty($items)) {
         echo json_encode(['success' => false, 'message' => 'Order must have at least one item.']); exit;
@@ -88,18 +123,18 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $pdo->prepare("
             INSERT INTO orders
-                (order_id, customer_name, customer_phone, customer_email, customer_address,
-                 subtotal, discount, discount_type, shipping_cost, shipping_method, total,
+                (order_id, customer_name, customer_phone, customer_email, customer_address, fb_page_id,
+                 subtotal, discount, discount_type, shipping_cost, shipping_method, courier_name, courier_charge, total,
                  payment_method, payment_status, status, remarks, created_by, assigned_to)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'new',?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'new',?,?,?)
         ")->execute([
-            $orderId, $customer_name, $customer_phone ?: null, $customer_email ?: null, $customer_address ?: null,
-            $subtotal, $discountAmount, $discount_type, $shipping_cost, $shipping_method ?: null, $total,
+            $orderId, $customer_name, $customer_phone ?: null, $customer_email ?: null, $customer_address ?: null, $fb_page_id,
+            $subtotal, $discountAmount, $discount_type, $shipping_cost, $shipping_method ?: null, $courier_name ?: null, $courier_charge, $total,
             $payment_method, $payment_status, $remarks ?: null, $user['id'], $user['id'],
         ]);
         $dbOrderId = $pdo->lastInsertId();
 
-        // Insert items and deduct stock
+        // Insert items — stock is NOT deducted here; deduction happens at dispatch time (see status action below)
         foreach ($lineItems as $li) {
             $pdo->prepare("
                 INSERT INTO order_items
@@ -109,18 +144,6 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 $dbOrderId, $li['product_id'], $li['product_name'], $li['variant_info'],
                 $li['qty'], $li['sell_price'], $li['buy_price'], $li['total'],
             ]);
-
-            // Deduct stock
-            $pdo->prepare("UPDATE products SET quantity = quantity - ? WHERE id=?")->execute([$li['qty'], $li['product_id']]);
-
-            // Recalculate stock_status
-            $row = $pdo->prepare("SELECT quantity, min_stock_level FROM products WHERE id=?");
-            $row->execute([$li['product_id']]);
-            $pr  = $row->fetch();
-            $qty = (int)$pr['quantity'];
-            $min = (int)$pr['min_stock_level'];
-            $ss  = $qty <= 0 ? 'outofstock' : ($qty <= 2 ? 'critical' : ($qty <= $min ? 'lowstock' : 'instock'));
-            $pdo->prepare("UPDATE products SET stock_status=? WHERE id=?")->execute([$ss, $li['product_id']]);
         }
 
         // Log initial status
@@ -133,6 +156,29 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->rollBack();
         echo json_encode(['success' => false, 'message' => 'Failed to create order. Please try again.']);
     }
+    exit;
+}
+
+// ── CHECK DUPLICATE (same phone, same day) ───────────────────
+if ($action === 'check_duplicate' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+    $phone = trim($_GET['phone'] ?? '');
+    if (!preg_match('/^\d{10}$/', $phone)) {
+        echo json_encode(['success' => true, 'duplicate' => false]); exit;
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT order_id, created_at FROM orders
+        WHERE customer_phone = ? AND DATE(created_at) = CURDATE()
+        ORDER BY created_at DESC LIMIT 1
+    ");
+    $stmt->execute([$phone]);
+    $existing = $stmt->fetch();
+
+    echo json_encode([
+        'success'   => true,
+        'duplicate' => (bool)$existing,
+        'order_id'  => $existing['order_id'] ?? null,
+    ]);
     exit;
 }
 
@@ -153,7 +199,7 @@ if ($action === 'status' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode(['success' => false, 'message' => 'Insufficient permissions for this status.']); exit;
     }
 
-    $stmt = $pdo->prepare("SELECT id, status FROM orders WHERE order_id=?");
+    $stmt = $pdo->prepare("SELECT id, status, stock_deducted, stock_restored FROM orders WHERE order_id=?");
     $stmt->execute([$orderId]);
     $order = $stmt->fetch();
     if (!$order) { echo json_encode(['success' => false, 'message' => 'Order not found.']); exit; }
@@ -168,12 +214,31 @@ if ($action === 'status' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $extra = ', delivered_at=NOW()';
     }
 
-    $pdo->prepare("UPDATE orders SET status=?, updated_by=?$extra WHERE id=?")->execute($params);
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare("UPDATE orders SET status=?, updated_by=?$extra WHERE id=?")->execute($params);
 
-    $pdo->prepare("INSERT INTO order_status_log (order_id,from_status,to_status,changed_by) VALUES (?,?,?,?)")
-        ->execute([$order['id'], $order['status'], $newStatus, $user['id']]);
+        $pdo->prepare("INSERT INTO order_status_log (order_id,from_status,to_status,changed_by) VALUES (?,?,?,?)")
+            ->execute([$order['id'], $order['status'], $newStatus, $user['id']]);
 
-    echo json_encode(['success' => true]);
+        // Stock deducts once, at dispatch time
+        if ($newStatus === 'dispatched' && !$order['stock_deducted']) {
+            adjustOrderStock($pdo, $order['id'], 'sale', -1, $user['id'], "Dispatched {$orderId}");
+            $pdo->prepare("UPDATE orders SET stock_deducted=1 WHERE id=?")->execute([$order['id']]);
+        }
+
+        // Stock restores once, at return time
+        if ($newStatus === 'returned' && !$order['stock_restored']) {
+            adjustOrderStock($pdo, $order['id'], 'return', 1, $user['id'], "Returned {$orderId}");
+            $pdo->prepare("UPDATE orders SET stock_restored=1 WHERE id=?")->execute([$order['id']]);
+        }
+
+        $pdo->commit();
+        echo json_encode(['success' => true]);
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        echo json_encode(['success' => false, 'message' => 'Failed to update status.']);
+    }
     exit;
 }
 
@@ -185,7 +250,7 @@ if ($action === 'confirm_all' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode(['success' => false, 'message' => 'Only admin or supervisor can do this.']); exit;
     }
 
-    $rows = $pdo->query("SELECT id FROM orders WHERE status='dispatched'")->fetchAll();
+    $rows = $pdo->query("SELECT id, order_id, stock_deducted FROM orders WHERE status='dispatched'")->fetchAll();
     if (empty($rows)) {
         echo json_encode(['success' => true, 'count' => 0, 'message' => 'No dispatched orders to confirm.']); exit;
     }
@@ -197,6 +262,12 @@ if ($action === 'confirm_all' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 ->execute([$user['id'], $row['id']]);
             $pdo->prepare("INSERT INTO order_status_log (order_id,from_status,to_status,changed_by) VALUES (?,'dispatched','confirmed',?)")
                 ->execute([$row['id'], $user['id']]);
+
+            // Undoing a dispatch must restore the stock that dispatch deducted
+            if ($row['stock_deducted']) {
+                adjustOrderStock($pdo, $row['id'], 'adjustment', 1, $user['id'], "Dispatch undone via Confirm All ({$row['order_id']})");
+                $pdo->prepare("UPDATE orders SET stock_deducted=0 WHERE id=?")->execute([$row['id']]);
+            }
         }
         $pdo->commit();
         echo json_encode(['success' => true, 'count' => count($rows)]);

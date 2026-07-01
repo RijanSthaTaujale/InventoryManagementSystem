@@ -6,12 +6,15 @@ require_once __DIR__ . '/../../config/auth_guard.php';
 $activePage = 'order';
 $pageTitle  = 'New Order';
 $user       = currentUser();
+$isAdmin    = $user['role'] === 'admin';
 $currency   = 'Rs';
 
 // Generate next order ID preview
 $last    = $pdo->query("SELECT order_id FROM orders ORDER BY id DESC LIMIT 1")->fetchColumn();
 $num     = $last ? (int)substr($last, strrpos($last,'-')+1) + 1 : 1;
 $nextId  = 'ORD-' . date('Y') . '-' . str_pad($num, 5, '0', STR_PAD_LEFT);
+
+$fbPages = $pdo->query("SELECT id, name FROM fb_pages WHERE status='active' ORDER BY name")->fetchAll();
 
 include __DIR__ . '/../../components/head.php';
 ?>
@@ -100,7 +103,8 @@ include __DIR__ . '/../../components/head.php';
                 </div>
                 <div class="form-group">
                   <label class="form-label">Phone Number *</label>
-                  <input type="text" id="custPhone" class="form-control" placeholder="98XXXXXXXX">
+                  <input type="text" id="custPhone" class="form-control" placeholder="98XXXXXXXX" maxlength="10" inputmode="numeric" onblur="checkDuplicatePhone()">
+                  <div id="duplicateWarning" style="display:none;margin-top:6px;padding:8px 10px;background:#fefce8;border:1px solid #fde68a;border-radius:var(--radius-sm);color:#92400e;font-size:.78rem"></div>
                 </div>
               </div>
               <div class="form-group">
@@ -108,8 +112,22 @@ include __DIR__ . '/../../components/head.php';
                 <input type="email" id="custEmail" class="form-control" placeholder="customer@example.com">
               </div>
               <div class="form-group">
-                <label class="form-label">Delivery Address *</label>
+                <label class="form-label">Delivery Address</label>
                 <textarea id="custAddress" class="form-control" rows="2" placeholder="Street, City, District"></textarea>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Facebook Page</label>
+                <div style="display:flex;gap:8px;align-items:center">
+                  <select id="fbPage" class="form-control">
+                    <option value="">— None —</option>
+                    <?php foreach ($fbPages as $fp): ?>
+                    <option value="<?= $fp['id'] ?>"><?= e($fp['name']) ?></option>
+                    <?php endforeach; ?>
+                  </select>
+                  <?php if ($isAdmin): ?>
+                  <button type="button" class="btn btn-outline btn-sm" style="white-space:nowrap" onclick="document.getElementById('addPageModal').style.display='flex'">+ Add Page</button>
+                  <?php endif; ?>
+                </div>
               </div>
               <div class="grid-2" style="gap:12px">
                 <div class="form-group">
@@ -135,20 +153,12 @@ include __DIR__ . '/../../components/head.php';
               </div>
               <div class="grid-2" style="gap:12px">
                 <div class="form-group">
-                  <label class="form-label">Payment Status</label>
-                  <select id="paymentStatus" class="form-control">
-                    <option value="unpaid">Unpaid</option>
-                    <option value="paid">Paid</option>
-                    <option value="partial">Partial</option>
-                  </select>
+                  <label class="form-label">Courier Name</label>
+                  <input type="text" id="courierName" class="form-control" placeholder="e.g. Pathao, NCM">
                 </div>
                 <div class="form-group">
-                  <label class="form-label">Order Status</label>
-                  <select id="orderStatus" class="form-control">
-                    <option value="new">New</option>
-                    <option value="confirmed">Confirmed</option>
-                    <option value="pending">Pending</option>
-                  </select>
+                  <label class="form-label">Courier Charge (Rs)</label>
+                  <input type="number" id="courierCharge" class="form-control" min="0" step="0.01" value="0">
                 </div>
               </div>
             </div>
@@ -218,6 +228,24 @@ include __DIR__ . '/../../components/head.php';
     </main>
   </div>
 </div>
+
+<?php if ($isAdmin): ?>
+<!-- Add FB Page modal -->
+<div id="addPageModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:var(--radius-xl);padding:24px;max-width:340px;width:90%;box-shadow:var(--shadow-md)">
+    <div style="font-size:1rem;font-weight:700;margin-bottom:14px">Add Facebook Page</div>
+    <div class="form-group">
+      <label class="form-label">Page Name</label>
+      <input type="text" id="newPageName" class="form-control" placeholder="Page name">
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('addPageModal').style.display='none'">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="addFbPage()">Add</button>
+    </div>
+  </div>
+</div>
+<?php endif; ?>
+
 <div class="toast-container" id="toastContainer"></div>
 
 <script>
@@ -320,6 +348,42 @@ function recalc() {
   document.getElementById('sumTotal').textContent     = `${CURRENCY} ${total.toLocaleString()}`;
 }
 
+// ── Duplicate phone check ───────────────────────────────────
+async function checkDuplicatePhone() {
+  const warnDiv = document.getElementById('duplicateWarning');
+  warnDiv.style.display = 'none';
+  const phone = document.getElementById('custPhone').value.trim();
+  if (!/^\d{10}$/.test(phone)) return;
+
+  const r = await fetch(`${APP_URL}/api/orders.php?action=check_duplicate&phone=${encodeURIComponent(phone)}`);
+  const d = await r.json();
+  if (d.success && d.duplicate) {
+    warnDiv.textContent = `⚠ This phone number already has an order today (${d.order_id}).`;
+    warnDiv.style.display = 'block';
+  }
+}
+
+// ── Add FB Page ──────────────────────────────────────────────
+async function addFbPage() {
+  const name = document.getElementById('newPageName').value.trim();
+  if (!name) return;
+  const r = await fetch(`${APP_URL}/api/admin.php?action=add_fb_page`, {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name })
+  });
+  const d = await r.json();
+  if (d.success) {
+    const sel = document.getElementById('fbPage');
+    const opt = document.createElement('option');
+    opt.value = d.id; opt.textContent = d.name; opt.selected = true;
+    sel.appendChild(opt);
+    document.getElementById('newPageName').value = '';
+    document.getElementById('addPageModal').style.display = 'none';
+    showToast('Page added', 'success');
+  } else {
+    showToast(d.message || 'Failed to add page', 'error');
+  }
+}
+
 // ── Submit ───────────────────────────────────────────────────
 async function submitOrder() {
   const errDiv = document.getElementById('orderError');
@@ -329,10 +393,9 @@ async function submitOrder() {
   const custPhone   = document.getElementById('custPhone').value.trim();
   const custAddress = document.getElementById('custAddress').value.trim();
 
-  if (!custName)    { errDiv.textContent='Customer name is required.'; errDiv.style.display='block'; return; }
-  if (!custPhone)   { errDiv.textContent='Phone number is required.';  errDiv.style.display='block'; return; }
-  if (!custAddress) { errDiv.textContent='Delivery address is required.'; errDiv.style.display='block'; return; }
-  if (!items.length){ errDiv.textContent='Add at least one product.'; errDiv.style.display='block'; return; }
+  if (!custName)              { errDiv.textContent='Customer name is required.'; errDiv.style.display='block'; return; }
+  if (!/^\d{10}$/.test(custPhone)) { errDiv.textContent='Phone number must be exactly 10 digits.'; errDiv.style.display='block'; return; }
+  if (!items.length)          { errDiv.textContent='Add at least one product.'; errDiv.style.display='block'; return; }
 
   const discAmt  = parseFloat(document.getElementById('discountAmt').value) || 0;
   const discType = document.getElementById('discountType').value;
@@ -347,11 +410,12 @@ async function submitOrder() {
     customer_phone:   custPhone,
     customer_email:   document.getElementById('custEmail').value.trim(),
     customer_address: custAddress,
-    status:           document.getElementById('orderStatus').value,
+    fb_page_id:       document.getElementById('fbPage').value || null,
     payment_method:   document.getElementById('paymentMethod').value,
-    payment_status:   document.getElementById('paymentStatus').value,
     shipping_method:  sel.value,
     shipping_cost:    shipping,
+    courier_name:     document.getElementById('courierName').value.trim(),
+    courier_charge:   parseFloat(document.getElementById('courierCharge').value) || 0,
     discount:         discount,
     discount_type:    discType,
     subtotal,
