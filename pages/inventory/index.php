@@ -200,6 +200,7 @@ include __DIR__ . '/../../components/head.php';
                   <th>Sell Price</th>
                   <th>Status</th>
                   <th>Last Adjusted</th>
+                  <th>Log</th>
                   <?php if ($isAdmin): ?><th>Action</th><?php endif; ?>
                 </tr>
               </thead>
@@ -232,6 +233,9 @@ include __DIR__ . '/../../components/head.php';
                   <td><span class="badge <?= $badge ?>"><?= $label ?></span></td>
                   <td style="font-size:.76rem;color:var(--text-muted)">
                     <?= $p['last_adjusted'] ? date('d M Y', strtotime($p['last_adjusted'])) : '—' ?>
+                  </td>
+                  <td>
+                    <a href="<?= APP_URL ?>/pages/inventory/log.php?product_id=<?= $p['id'] ?>" class="btn btn-outline btn-xs">Log</a>
                   </td>
                   <?php if ($isAdmin): ?>
                   <td>

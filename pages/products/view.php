@@ -229,7 +229,10 @@ include __DIR__ . '/../../components/head.php';
           <!-- Stock adjustment log -->
           <?php if (!empty($adjLog)): ?>
           <div class="card">
-            <div style="font-size:.76rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px">Stock History</div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+              <div style="font-size:.76rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">Stock History</div>
+              <a href="<?= APP_URL ?>/pages/inventory/log.php?product_id=<?= $p['id'] ?>" style="font-size:.76rem;font-weight:600;color:var(--primary)">View Full Log →</a>
+            </div>
             <div style="display:flex;flex-direction:column;gap:0">
               <?php foreach ($adjLog as $adj):
                 $isPos = $adj['qty_change'] >= 0;
