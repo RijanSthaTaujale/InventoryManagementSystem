@@ -8,6 +8,7 @@ $pageTitle  = 'Orders';
 $user       = currentUser();
 $isAdmin    = $user['role'] === 'admin';
 $isSuper    = $user['role'] === 'supervisor';
+$isStaff    = $user['role'] === 'staff';
 $currency   = 'Rs';
 
 $search     = trim($_GET['search'] ?? '');
@@ -45,10 +46,12 @@ $offset     = ($page - 1) * $perPage;
 
 $stmt = $pdo->prepare("
     SELECT o.*, COUNT(oi.id) AS item_count,
-           u.name AS assigned_name
+           u.name AS assigned_name,
+           uc.name AS created_by_name
     FROM orders o
     LEFT JOIN order_items oi ON oi.order_id = o.id
-    LEFT JOIN users u ON u.id = o.assigned_to
+    LEFT JOIN users u  ON u.id  = o.assigned_to
+    LEFT JOIN users uc ON uc.id = o.created_by
     $whereSQL
     GROUP BY o.id
     ORDER BY o.created_at DESC
@@ -85,6 +88,40 @@ $badgeMap = [
     'returned'=>'badge-returned','in_courier'=>'badge-in_courier'
 ];
 
+// ── Role-based allowed status options for the dropdown ────────
+// "Confirmed" is intentionally excluded from the dropdown for all roles —
+// it still exists as a valid status elsewhere (tabs, filters, badges, old orders),
+// it just can't be manually selected here anymore.
+// admin: everything except confirmed
+// supervisor: everything except confirmed
+// staff: new, pending, cancelled, dispatched
+$allStatusLabels = [
+    'new'        => 'New',
+    'confirmed'  => 'Confirmed',
+    'pending'    => 'Pending',
+    'cancelled'  => 'Cancelled',
+    'dispatched' => 'Dispatched',
+    'in_courier' => 'In Courier',
+    'delivered'  => 'Delivered',
+    'returned'   => 'Returned',
+];
+
+$dropdownLabels = $allStatusLabels;
+unset($dropdownLabels['confirmed']); // not selectable via dropdown for anyone
+
+if ($isAdmin) {
+    $allowedStatusOptions = $dropdownLabels; // all except confirmed
+} elseif ($isSuper) {
+    $allowedStatusOptions = $dropdownLabels; // all except confirmed
+} else { // staff
+    $allowedStatusOptions = [
+        'new'        => 'New',
+        'pending'    => 'Pending',
+        'cancelled'  => 'Cancelled',
+        'dispatched' => 'Dispatched',
+    ];
+}
+
 include __DIR__ . '/../../components/head.php';
 ?>
 <div class="app-shell">
@@ -104,10 +141,18 @@ include __DIR__ . '/../../components/head.php';
             <?php endif; ?>
           </p>
         </div>
-        <a href="<?= APP_URL ?>/pages/orders/create.php" class="btn btn-primary">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          New Order
-        </a>
+        <div style="display:flex;gap:8px">
+          <?php if ($isAdmin || $isSuper): ?>
+          <button onclick="confirmAllDispatched()" class="btn btn-outline" id="confirmAllBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            Confirm All Dispatched
+          </button>
+          <?php endif; ?>
+          <a href="<?= APP_URL ?>/pages/orders/create.php" class="btn btn-primary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            New Order
+          </a>
+        </div>
       </div>
 
       <!-- Stat cards -->
@@ -174,7 +219,7 @@ include __DIR__ . '/../../components/head.php';
         <div style="font-size:.82rem">Try adjusting your search or filters</div>
       </div>
       <?php else: ?>
-      <div class="data-table-wrap" style="margin-bottom:20px">
+      <div class="data-table-wrap" style="margin-bottom:20px;overflow-x:auto">
         <table class="data-table">
           <thead>
             <tr>
@@ -184,6 +229,7 @@ include __DIR__ . '/../../components/head.php';
               <?php if ($isAdmin): ?><th>Total</th><?php endif; ?>
               <th>Status</th>
               <th>Payment</th>
+              <th>Created By</th>
               <th>Date</th>
               <th>Actions</th>
             </tr>
@@ -192,6 +238,12 @@ include __DIR__ . '/../../components/head.php';
             <?php foreach ($orders as $o):
               $badge = $badgeMap[$o['status']] ?? 'badge-pending';
               $payBadge = $o['payment_status']==='paid' ? 'badge-confirmed' : ($o['payment_status']==='partial'?'badge-pending':'badge-cancelled');
+
+              // Build this row's dropdown options: role-allowed statuses + current status (so it's always selectable/visible)
+              $rowOptions = $allowedStatusOptions;
+              if (!isset($rowOptions[$o['status']])) {
+                  $rowOptions = [$o['status'] => $allStatusLabels[$o['status']] ?? ucfirst($o['status'])] + $rowOptions;
+              }
             ?>
             <tr>
               <td>
@@ -208,22 +260,25 @@ include __DIR__ . '/../../components/head.php';
               <?php if ($isAdmin): ?>
               <td style="font-weight:600"><?= $currency ?> <?= number_format($o['total'],0) ?></td>
               <?php endif; ?>
-              <td><span class="badge <?= $badge ?>"><?= ucfirst(str_replace('_',' ',$o['status'])) ?></span></td>
+              <td>
+                <select class="form-control status-select"
+                        data-order-id="<?= e($o['order_id']) ?>"
+                        data-current="<?= e($o['status']) ?>"
+                        style="width:auto;min-width:130px;padding:5px 8px;font-size:.78rem;font-weight:600;border-radius:9999px;<?= 'background:var(--bg)' ?>"
+                        onchange="onStatusChange(this)">
+                  <?php foreach ($rowOptions as $val => $label): ?>
+                  <option value="<?= $val ?>" <?= $val === $o['status'] ? 'selected' : '' ?>><?= $label ?></option>
+                  <?php endforeach; ?>
+                </select>
+              </td>
               <td><span class="badge <?= $payBadge ?>"><?= ucfirst($o['payment_status']) ?></span></td>
+              <td style="font-size:.8rem;color:var(--text-secondary)"><?= e($o['created_by_name'] ?? '—') ?></td>
               <td>
                 <div style="font-size:.8rem"><?= date('d M Y', strtotime($o['created_at'])) ?></div>
                 <div style="font-size:.72rem;color:var(--text-muted)"><?= date('h:i A', strtotime($o['created_at'])) ?></div>
               </td>
               <td>
-                <div style="display:flex;gap:5px;flex-wrap:wrap">
-                  <a href="<?= APP_URL ?>/pages/orders/view.php?id=<?= urlencode($o['order_id']) ?>" class="btn btn-outline btn-xs">View</a>
-                  <?php if (in_array($o['status'],['new','confirmed','pending']) && ($isAdmin || $user['role']==='staff' || $isSuper)): ?>
-                  <button onclick="quickStatus('<?= $o['order_id'] ?>','confirmed')" class="btn btn-xs" style="background:#dcfce7;color:#15803d;border:none;cursor:pointer" title="Confirm">✓</button>
-                  <?php endif; ?>
-                  <?php if ($isAdmin && $o['status']==='confirmed'): ?>
-                  <button onclick="quickStatus('<?= $o['order_id'] ?>','dispatched')" class="btn btn-xs btn-purple" title="Dispatch">→</button>
-                  <?php endif; ?>
-                </div>
+                <a href="<?= APP_URL ?>/pages/orders/view.php?id=<?= urlencode($o['order_id']) ?>" class="btn btn-outline btn-xs">View</a>
               </td>
             </tr>
             <?php endforeach; ?>
@@ -238,17 +293,74 @@ include __DIR__ . '/../../components/head.php';
     </main>
   </div>
 </div>
+
+<!-- Confirm All modal -->
+<?php if ($isAdmin || $isSuper): ?>
+<div id="confirmAllModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:var(--radius-xl);padding:28px;max-width:380px;width:90%;box-shadow:var(--shadow-md)">
+    <div style="font-size:1.05rem;font-weight:700;margin-bottom:6px">Confirm All Dispatched Orders</div>
+    <p style="font-size:.86rem;color:var(--text-secondary);margin-bottom:20px">
+      This will revert every order currently marked <strong>Dispatched</strong> back to <strong>Confirmed</strong>. Use this to undo a dispatch batch sent out by mistake.
+    </p>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('confirmAllModal').style.display='none'">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="confirmAllConfirmBtn">Yes, Confirm All</button>
+    </div>
+  </div>
+</div>
+<?php endif; ?>
+
 <div class="toast-container" id="toastContainer"></div>
 
 <script>
-async function quickStatus(orderId, newStatus) {
-  const res  = await fetch('<?= APP_URL ?>/api/orders.php?action=status', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({order_id: orderId, status: newStatus})
+const APP_URL = '<?= APP_URL ?>';
+
+// In-row status dropdown change
+async function onStatusChange(selectEl) {
+  const orderId   = selectEl.dataset.orderId;
+  const newStatus = selectEl.value;
+  const prevStatus= selectEl.dataset.current;
+
+  if (newStatus === prevStatus) return;
+
+  selectEl.disabled = true;
+  const res = await fetch(`${APP_URL}/api/orders.php?action=status`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ order_id: orderId, status: newStatus })
   });
   const data = await res.json();
-  if (data.success) { showToast('Order ' + newStatus,'success'); setTimeout(()=>location.reload(),700); }
-  else showToast(data.message||'Failed','error');
+  selectEl.disabled = false;
+
+  if (data.success) {
+    selectEl.dataset.current = newStatus;
+    showToast('Status updated', 'success');
+    setTimeout(() => location.reload(), 600);
+  } else {
+    selectEl.value = prevStatus; // revert UI on failure
+    showToast(data.message || 'Failed to update status', 'error');
+  }
 }
+
+<?php if ($isAdmin || $isSuper): ?>
+function confirmAllDispatched() {
+  document.getElementById('confirmAllModal').style.display = 'flex';
+  document.getElementById('confirmAllConfirmBtn').onclick = async () => {
+    document.getElementById('confirmAllModal').style.display = 'none';
+    const btn = document.getElementById('confirmAllBtn');
+    btn.disabled = true;
+    const res = await fetch(`${APP_URL}/api/orders.php?action=confirm_all`, {
+      method: 'POST', headers: {'Content-Type':'application/json'}
+    });
+    const data = await res.json();
+    btn.disabled = false;
+    if (data.success) {
+      showToast(data.count > 0 ? `${data.count} order(s) confirmed` : 'No dispatched orders found', 'success');
+      setTimeout(() => location.reload(), 700);
+    } else {
+      showToast(data.message || 'Failed', 'error');
+    }
+  };
+}
+<?php endif; ?>
 </script>
 <?php include __DIR__ . '/../../components/foot.php'; ?>

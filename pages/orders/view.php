@@ -63,32 +63,42 @@ $badge    = $badgeMap[$order['status']] ?? 'badge-pending';
 $payBadge = $order['payment_status'] === 'paid' ? 'badge-confirmed' : ($order['payment_status'] === 'partial' ? 'badge-pending' : 'badge-cancelled');
 
 // What status changes are allowed per role?
-// Admin: anything
-// Supervisor: confirmed, pending, cancelled, delivered, returned, in_courier (NOT dispatched — that's admin)
-// Staff: new → confirmed, pending, cancelled only
+// "Confirmed" is intentionally excluded from the dropdown for all roles —
+// it still exists as a valid status elsewhere, it just can't be manually selected here.
+// Admin: everything except confirmed
+// Supervisor: everything except confirmed
+// Staff: new, pending, cancelled, dispatched
 $currentStatus = $order['status'];
 
-// Build allowed next-status buttons
-$buttons = [];
+$allStatusLabels = [
+    'new'        => 'New',
+    'confirmed'  => 'Confirmed',
+    'pending'    => 'Pending',
+    'cancelled'  => 'Cancelled',
+    'dispatched' => 'Dispatched',
+    'in_courier' => 'In Courier',
+    'delivered'  => 'Delivered',
+    'returned'   => 'Returned',
+];
+
+$dropdownLabels = $allStatusLabels;
+unset($dropdownLabels['confirmed']); // not selectable via dropdown for anyone
+
 if ($isAdmin) {
-    if ($currentStatus === 'new')        $buttons[] = ['confirmed',   'Confirm',        'btn-success'];
-    if ($currentStatus === 'confirmed')  $buttons[] = ['dispatched',  'Mark Dispatched', 'btn-purple'];
-    if ($currentStatus === 'dispatched') $buttons[] = ['in_courier',  'In Courier',     'btn-outline'];
-    if ($currentStatus === 'in_courier') $buttons[] = ['delivered',   'Mark Delivered', 'btn-success'];
-    if (in_array($currentStatus, ['new','confirmed','pending'])) $buttons[] = ['cancelled', 'Cancel Order', 'btn-danger'];
-    if ($currentStatus === 'delivered')  $buttons[] = ['returned',    'Mark Returned',  'btn-amber'];
-    if ($currentStatus === 'new')        $buttons[] = ['pending',     'Set Pending',    'btn-amber'];
+    $statusOptions = $dropdownLabels; // all except confirmed
 } elseif ($isSuper) {
-    if ($currentStatus === 'new')        $buttons[] = ['confirmed',   'Confirm',        'btn-success'];
-    if ($currentStatus === 'new')        $buttons[] = ['pending',     'Set Pending',    'btn-amber'];
-    if ($currentStatus === 'dispatched') $buttons[] = ['in_courier',  'In Courier',     'btn-outline'];
-    if ($currentStatus === 'in_courier') $buttons[] = ['delivered',   'Mark Delivered', 'btn-success'];
-    if ($currentStatus === 'delivered')  $buttons[] = ['returned',    'Mark Returned',  'btn-amber'];
-    if (in_array($currentStatus, ['new','confirmed','pending'])) $buttons[] = ['cancelled', 'Cancel Order', 'btn-danger'];
-} elseif ($isStaff) {
-    if ($currentStatus === 'new')        $buttons[] = ['confirmed',   'Confirm',        'btn-success'];
-    if ($currentStatus === 'new')        $buttons[] = ['pending',     'Set Pending',    'btn-amber'];
-    if (in_array($currentStatus, ['new','confirmed','pending'])) $buttons[] = ['cancelled', 'Cancel Order', 'btn-danger'];
+    $statusOptions = $dropdownLabels; // all except confirmed
+} else { // staff
+    $statusOptions = [
+        'new'        => 'New',
+        'pending'    => 'Pending',
+        'cancelled'  => 'Cancelled',
+        'dispatched' => 'Dispatched',
+    ];
+}
+// Always make sure the current status is present, even if outside the role's normal range
+if (!isset($statusOptions[$currentStatus])) {
+    $statusOptions = [$currentStatus => $allStatusLabels[$currentStatus] ?? ucfirst($currentStatus)] + $statusOptions;
 }
 
 $statusColors = [
@@ -131,12 +141,13 @@ include __DIR__ . '/../../components/head.php';
           </p>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
-          <?php foreach ($buttons as [$newStatus, $label, $btnClass]): ?>
-          <button onclick="changeStatus('<?= $newStatus ?>', '<?= $label ?>')"
-                  class="btn <?= $btnClass ?> btn-sm">
-            <?= $label ?>
-          </button>
-          <?php endforeach; ?>
+          <select id="statusDropdown" class="form-control"
+                  style="width:auto;min-width:150px;font-weight:600"
+                  onchange="changeStatus(this.value)">
+            <?php foreach ($statusOptions as $val => $label): ?>
+            <option value="<?= $val ?>" <?= $val === $currentStatus ? 'selected' : '' ?>><?= $label ?></option>
+            <?php endforeach; ?>
+          </select>
           <?php if ($isAdmin): ?>
           <a href="<?= APP_URL ?>/pages/orders/create.php" class="btn btn-outline btn-sm">New Order</a>
           <?php endif; ?>
@@ -386,20 +397,37 @@ include __DIR__ . '/../../components/head.php';
 const APP_URL   = '<?= APP_URL ?>';
 const ORDER_ID  = '<?= e($order['order_id']) ?>';
 
-function changeStatus(newStatus, label) {
+function changeStatus(newStatus) {
+  const dropdown = document.getElementById('statusDropdown');
+  const prevStatus = '<?= $currentStatus ?>';
+  if (newStatus === prevStatus) return;
+
+  const label = dropdown.options[dropdown.selectedIndex].text;
   document.getElementById('modalTitle').textContent = label;
   document.getElementById('modalMsg').textContent   = `Change order ${ORDER_ID} status to "${label}"?`;
   document.getElementById('statusModal').style.display = 'flex';
+
   document.getElementById('modalConfirmBtn').onclick = async () => {
     document.getElementById('statusModal').style.display = 'none';
+    dropdown.disabled = true;
     const r = await fetch(`${APP_URL}/api/orders.php?action=status`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ order_id: ORDER_ID, status: newStatus })
     });
     const d = await r.json();
+    dropdown.disabled = false;
     if (d.success) { showToast('Status updated', 'success'); setTimeout(() => location.reload(), 700); }
-    else showToast(d.message || 'Failed', 'error');
+    else { dropdown.value = prevStatus; showToast(d.message || 'Failed', 'error'); }
   };
+
+  // If the modal is dismissed via Cancel button, revert the dropdown
+  const cancelBtns = document.querySelectorAll('#statusModal .btn-outline');
+  cancelBtns.forEach(btn => {
+    btn.onclick = () => {
+      document.getElementById('statusModal').style.display = 'none';
+      dropdown.value = prevStatus;
+    };
+  });
 }
 
 <?php if ($isAdmin): ?>

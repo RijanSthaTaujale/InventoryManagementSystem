@@ -136,7 +136,7 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-// ── UPDATE STATUS ────────────────────────────────────────────
+// ── UPDATE STATUS (single order) ─────────────────────────────
 if ($action === 'status' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $body      = json_decode(file_get_contents('php://input'), true);
     $orderId   = trim($body['order_id'] ?? '');
@@ -148,9 +148,7 @@ if ($action === 'status' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // Role-based permission checks
-    if ($newStatus === 'dispatched' && !$isAdmin) {
-        echo json_encode(['success' => false, 'message' => 'Only admin can dispatch orders.']); exit;
-    }
+    // Dispatch is now allowed for all roles (admin, supervisor, staff).
     if (in_array($newStatus, ['delivered', 'returned', 'in_courier']) && $isStaff) {
         echo json_encode(['success' => false, 'message' => 'Insufficient permissions for this status.']); exit;
     }
@@ -176,6 +174,36 @@ if ($action === 'status' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         ->execute([$order['id'], $order['status'], $newStatus, $user['id']]);
 
     echo json_encode(['success' => true]);
+    exit;
+}
+
+// ── CONFIRM ALL DISPATCHED ORDERS (bulk, admin + supervisor) ──
+// Reverts every order currently in "dispatched" status back to "confirmed".
+// Use case: undo/recall a batch of orders that were dispatched in error.
+if ($action === 'confirm_all' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!$isAdmin && !$isSuper) {
+        echo json_encode(['success' => false, 'message' => 'Only admin or supervisor can do this.']); exit;
+    }
+
+    $rows = $pdo->query("SELECT id FROM orders WHERE status='dispatched'")->fetchAll();
+    if (empty($rows)) {
+        echo json_encode(['success' => true, 'count' => 0, 'message' => 'No dispatched orders to confirm.']); exit;
+    }
+
+    $pdo->beginTransaction();
+    try {
+        foreach ($rows as $row) {
+            $pdo->prepare("UPDATE orders SET status='confirmed', updated_by=? WHERE id=?")
+                ->execute([$user['id'], $row['id']]);
+            $pdo->prepare("INSERT INTO order_status_log (order_id,from_status,to_status,changed_by) VALUES (?,'dispatched','confirmed',?)")
+                ->execute([$row['id'], $user['id']]);
+        }
+        $pdo->commit();
+        echo json_encode(['success' => true, 'count' => count($rows)]);
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        echo json_encode(['success' => false, 'message' => 'Failed to update orders.']);
+    }
     exit;
 }
 

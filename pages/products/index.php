@@ -52,12 +52,14 @@ $stmt->execute($params);
 $products = $stmt->fetchAll();
 
 // Quick stats
+// NOTE: "out" is a reserved word in MariaDB/MySQL (used in OUTER/window-function contexts),
+// so it cannot be used unquoted as a column alias. Renamed to outofstock_count.
 $stats = $pdo->query("
     SELECT
         COUNT(*) AS total,
         SUM(CASE WHEN stock_status='lowstock'   THEN 1 ELSE 0 END) AS low,
         SUM(CASE WHEN stock_status='critical'   THEN 1 ELSE 0 END) AS critical,
-        SUM(CASE WHEN stock_status='outofstock' THEN 1 ELSE 0 END) AS out
+        SUM(CASE WHEN stock_status='outofstock' THEN 1 ELSE 0 END) AS outofstock_count
     FROM products WHERE status='active'
 ")->fetch();
 
@@ -137,7 +139,7 @@ include __DIR__ . '/../../components/head.php';
           <div class="stat-card" style="padding:14px 16px;<?= $stockFilter==='outofstock'?'border-color:var(--primary)':'' ?>">
             <div>
               <div class="stat-label">Out of Stock</div>
-              <div class="stat-value" style="font-size:1.3rem;color:<?= $stats['out']>0?'#ef4444':'var(--text)' ?>"><?= $stats['out'] ?></div>
+              <div class="stat-value" style="font-size:1.3rem;color:<?= $stats['outofstock_count']>0?'#ef4444':'var(--text)' ?>"><?= $stats['outofstock_count'] ?></div>
             </div>
             <div class="stat-icon red">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
