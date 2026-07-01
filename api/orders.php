@@ -278,6 +278,161 @@ if ($action === 'confirm_all' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
+// ── BULK: DISPATCH ALL CONFIRMED (admin + supervisor) ─────────
+if ($action === 'dispatch_all_confirmed' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!$isAdmin && !$isSuper) {
+        echo json_encode(['success' => false, 'message' => 'Only admin or supervisor can do this.']); exit;
+    }
+
+    $rows = $pdo->query("SELECT id, order_id, stock_deducted FROM orders WHERE status='confirmed'")->fetchAll();
+    if (empty($rows)) {
+        echo json_encode(['success' => true, 'count' => 0, 'message' => 'No confirmed orders to dispatch.']); exit;
+    }
+
+    $pdo->beginTransaction();
+    try {
+        foreach ($rows as $row) {
+            $pdo->prepare("UPDATE orders SET status='dispatched', dispatched_by=?, dispatched_at=NOW(), updated_by=? WHERE id=?")
+                ->execute([$user['id'], $user['id'], $row['id']]);
+            $pdo->prepare("INSERT INTO order_status_log (order_id,from_status,to_status,changed_by) VALUES (?,'confirmed','dispatched',?)")
+                ->execute([$row['id'], $user['id']]);
+
+            if (!$row['stock_deducted']) {
+                adjustOrderStock($pdo, $row['id'], 'sale', -1, $user['id'], "Bulk dispatched ({$row['order_id']})");
+                $pdo->prepare("UPDATE orders SET stock_deducted=1 WHERE id=?")->execute([$row['id']]);
+            }
+        }
+        $pdo->commit();
+        echo json_encode(['success' => true, 'count' => count($rows)]);
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        echo json_encode(['success' => false, 'message' => 'Failed to dispatch orders.']);
+    }
+    exit;
+}
+
+// ── BULK: MOVE ALL DISPATCHED TO IN COURIER (admin + supervisor) ──
+if ($action === 'move_all_to_courier' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!$isAdmin && !$isSuper) {
+        echo json_encode(['success' => false, 'message' => 'Only admin or supervisor can do this.']); exit;
+    }
+
+    $rows = $pdo->query("SELECT id FROM orders WHERE status='dispatched'")->fetchAll();
+    if (empty($rows)) {
+        echo json_encode(['success' => true, 'count' => 0, 'message' => 'No dispatched orders to move.']); exit;
+    }
+
+    $pdo->beginTransaction();
+    try {
+        foreach ($rows as $row) {
+            $pdo->prepare("UPDATE orders SET status='in_courier', updated_by=? WHERE id=?")
+                ->execute([$user['id'], $row['id']]);
+            $pdo->prepare("INSERT INTO order_status_log (order_id,from_status,to_status,changed_by) VALUES (?,'dispatched','in_courier',?)")
+                ->execute([$row['id'], $user['id']]);
+        }
+        $pdo->commit();
+        echo json_encode(['success' => true, 'count' => count($rows)]);
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        echo json_encode(['success' => false, 'message' => 'Failed to update orders.']);
+    }
+    exit;
+}
+
+// ── BULK: DELIVER BY PASTED ORDER IDs (admin + supervisor) ────
+// Only orders currently "in_courier" are transitioned; everything else is skipped and reported.
+if ($action === 'bulk_deliver' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!$isAdmin && !$isSuper) {
+        echo json_encode(['success' => false, 'message' => 'Only admin or supervisor can do this.']); exit;
+    }
+
+    $body     = json_decode(file_get_contents('php://input'), true);
+    $orderIds = array_filter(array_map('trim', $body['order_ids'] ?? []));
+    if (empty($orderIds)) {
+        echo json_encode(['success' => false, 'message' => 'No order IDs provided.']); exit;
+    }
+
+    $delivered = 0;
+    $skipped   = [];
+
+    $pdo->beginTransaction();
+    try {
+        foreach ($orderIds as $oid) {
+            $stmt = $pdo->prepare("SELECT id, status FROM orders WHERE order_id=?");
+            $stmt->execute([$oid]);
+            $o = $stmt->fetch();
+
+            if (!$o) { $skipped[] = "$oid (not found)"; continue; }
+            if ($o['status'] !== 'in_courier') { $skipped[] = "$oid (status: {$o['status']})"; continue; }
+
+            $pdo->prepare("UPDATE orders SET status='delivered', delivered_at=NOW(), updated_by=? WHERE id=?")
+                ->execute([$user['id'], $o['id']]);
+            $pdo->prepare("INSERT INTO order_status_log (order_id,from_status,to_status,changed_by) VALUES (?,'in_courier','delivered',?)")
+                ->execute([$o['id'], $user['id']]);
+            $delivered++;
+        }
+        $pdo->commit();
+        echo json_encode(['success' => true, 'delivered' => $delivered, 'skipped' => $skipped]);
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        echo json_encode(['success' => false, 'message' => 'Failed to process bulk delivery.']);
+    }
+    exit;
+}
+
+// ── EXPORT ORDERS AS CSV (respects current list filters) ─────
+if ($action === 'export_csv' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+    $search   = trim($_GET['search']   ?? '');
+    $status   = $_GET['status']        ?? '';
+    $dateFrom = $_GET['date_from']     ?? '';
+    $dateTo   = $_GET['date_to']       ?? '';
+    $courier  = trim($_GET['courier']  ?? '');
+
+    $validStatuses = ['new','confirmed','pending','cancelled','dispatched','delivered','returned','in_courier'];
+    $where  = ['1=1'];
+    $params = [];
+
+    if ($search) {
+        $where[] = "(order_id LIKE ? OR customer_name LIKE ? OR customer_phone LIKE ?)";
+        $like    = "%$search%";
+        $params  = array_merge($params, [$like, $like, $like]);
+    }
+    if ($status && in_array($status, $validStatuses)) { $where[] = "status = ?"; $params[] = $status; }
+    if ($dateFrom) { $where[] = "DATE(created_at) >= ?"; $params[] = $dateFrom; }
+    if ($dateTo)   { $where[] = "DATE(created_at) <= ?"; $params[] = $dateTo; }
+    if ($courier)  { $where[] = "courier_name = ?"; $params[] = $courier; }
+
+    $whereSQL = 'WHERE ' . implode(' AND ', $where);
+
+    $stmt = $pdo->prepare("
+        SELECT order_id, customer_name, customer_phone, status, payment_status, courier_name, courier_charge, total, created_at
+        FROM orders $whereSQL ORDER BY created_at DESC
+    ");
+    $stmt->execute($params);
+    $rows = $stmt->fetchAll();
+
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="orders_export_' . date('Ymd_His') . '.csv"');
+
+    $out = fopen('php://output', 'w');
+    $headerRow = ['Order ID', 'Customer', 'Phone', 'Status', 'Payment Status', 'Courier'];
+    if ($isAdmin) { $headerRow[] = 'Courier Charge'; $headerRow[] = 'Total'; }
+    $headerRow[] = 'Date';
+    fputcsv($out, $headerRow);
+
+    foreach ($rows as $r) {
+        $line = [
+            $r['order_id'], $r['customer_name'], $r['customer_phone'],
+            ucfirst(str_replace('_', ' ', $r['status'])), ucfirst($r['payment_status']), $r['courier_name'] ?? '',
+        ];
+        if ($isAdmin) { $line[] = $r['courier_charge']; $line[] = $r['total']; }
+        $line[] = $r['created_at'];
+        fputcsv($out, $line);
+    }
+    fclose($out);
+    exit;
+}
+
 // ── UPDATE PAYMENT STATUS ────────────────────────────────────
 if ($action === 'payment' && $isAdmin && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $body           = json_decode(file_get_contents('php://input'), true);

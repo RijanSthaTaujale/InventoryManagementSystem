@@ -15,6 +15,7 @@ $search     = trim($_GET['search'] ?? '');
 $status     = $_GET['status']      ?? '';
 $dateFrom   = $_GET['date_from']   ?? '';
 $dateTo     = $_GET['date_to']     ?? '';
+$courier    = trim($_GET['courier'] ?? '');
 $page       = max(1, (int)($_GET['page'] ?? 1));
 $perPage    = 15;
 
@@ -34,8 +35,11 @@ if ($status && in_array($status, $validStatuses)) {
 }
 if ($dateFrom) { $where[] = "DATE(o.created_at) >= ?"; $params[] = $dateFrom; }
 if ($dateTo)   { $where[] = "DATE(o.created_at) <= ?"; $params[] = $dateTo; }
+if ($courier)  { $where[] = "o.courier_name = ?"; $params[] = $courier; }
 
 $whereSQL = 'WHERE ' . implode(' AND ', $where);
+
+$couriers = $pdo->query("SELECT DISTINCT courier_name FROM orders WHERE courier_name IS NOT NULL AND courier_name <> '' ORDER BY courier_name")->fetchAll(PDO::FETCH_COLUMN);
 
 $countStmt = $pdo->prepare("SELECT COUNT(*) FROM orders o $whereSQL");
 $countStmt->execute($params);
@@ -60,6 +64,26 @@ $stmt = $pdo->prepare("
 $stmt->execute($params);
 $orders = $stmt->fetchAll();
 
+// Blacklist lookup (small table — load whole set once)
+$blacklistSet = array_flip($pdo->query("SELECT phone FROM customer_blacklist")->fetchAll(PDO::FETCH_COLUMN));
+
+// Duplicate detection: same phone + same day appearing more than once,
+// scoped to phones present on this page for efficiency.
+$pagePhones = array_values(array_unique(array_filter(array_column($orders, 'customer_phone'))));
+$duplicateKeys = [];
+if ($pagePhones) {
+    $placeholders = implode(',', array_fill(0, count($pagePhones), '?'));
+    $dupStmt = $pdo->prepare("
+        SELECT customer_phone, DATE(created_at) AS d, COUNT(*) AS c
+        FROM orders WHERE customer_phone IN ($placeholders)
+        GROUP BY customer_phone, DATE(created_at) HAVING c > 1
+    ");
+    $dupStmt->execute($pagePhones);
+    foreach ($dupStmt->fetchAll() as $row) {
+        $duplicateKeys[$row['customer_phone'] . '|' . $row['d']] = true;
+    }
+}
+
 // Status counts for tab bar
 $statusCounts = [];
 foreach ($validStatuses as $s) {
@@ -79,7 +103,7 @@ if ($isAdmin) {
 
 $baseUrl = APP_URL . '/pages/orders/index.php?' . http_build_query(array_filter([
     'search' => $search, 'status' => $status,
-    'date_from' => $dateFrom, 'date_to' => $dateTo
+    'date_from' => $dateFrom, 'date_to' => $dateTo, 'courier' => $courier
 ]));
 
 $badgeMap = [
@@ -141,11 +165,27 @@ include __DIR__ . '/../../components/head.php';
             <?php endif; ?>
           </p>
         </div>
-        <div style="display:flex;gap:8px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+          <a href="<?= APP_URL ?>/api/orders.php?action=export_csv&<?= http_build_query(array_filter(['search'=>$search,'status'=>$status,'date_from'=>$dateFrom,'date_to'=>$dateTo,'courier'=>$courier])) ?>" class="btn btn-outline">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Export CSV
+          </a>
           <?php if ($isAdmin || $isSuper): ?>
           <button onclick="confirmAllDispatched()" class="btn btn-outline" id="confirmAllBtn">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
             Confirm All Dispatched
+          </button>
+          <button onclick="dispatchAllConfirmed()" class="btn btn-outline" id="dispatchAllBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            Dispatch All Confirmed
+          </button>
+          <button onclick="moveAllToCourier()" class="btn btn-outline" id="moveAllCourierBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+            Move All to In Courier
+          </button>
+          <button onclick="document.getElementById('bulkDeliverModal').style.display='flex'" class="btn btn-outline" id="bulkDeliverBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            Bulk Deliver by ID
           </button>
           <?php endif; ?>
           <a href="<?= APP_URL ?>/pages/orders/create.php" class="btn btn-primary">
@@ -203,11 +243,17 @@ include __DIR__ . '/../../components/head.php';
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text-muted)"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           <input type="text" name="search" value="<?= e($search) ?>" placeholder="Order ID, customer name, phone..." class="form-control" style="padding-left:32px">
         </div>
-        <input type="date" name="date_from" value="<?= e($dateFrom) ?>" class="form-control" style="width:auto" title="From date">
-        <input type="date" name="date_to"   value="<?= e($dateTo)   ?>" class="form-control" style="width:auto" title="To date">
+        <input type="date" name="date_from" id="dateFromInput" value="<?= e($dateFrom) ?>" class="form-control" style="width:auto" title="From date">
+        <input type="date" name="date_to"   id="dateToInput"   value="<?= e($dateTo)   ?>" class="form-control" style="width:auto" title="To date">
+        <select name="courier" class="form-control" style="width:auto">
+          <option value="">All Couriers</option>
+          <?php foreach ($couriers as $c): ?>
+          <option value="<?= e($c) ?>" <?= $courier === $c ? 'selected' : '' ?>><?= e($c) ?></option>
+          <?php endforeach; ?>
+        </select>
         <button type="submit" class="btn btn-primary btn-sm">Search</button>
-        <?php if ($search||$dateFrom||$dateTo): ?>
-        <a href="<?= APP_URL ?>/pages/orders/index.php<?= $status?'?status='.urlencode($status):'' ?>" class="btn btn-outline btn-sm">Clear</a>
+        <?php if ($search||$dateFrom||$dateTo||$courier): ?>
+        <a href="<?= APP_URL ?>/pages/orders/index.php<?= $status?'?status='.urlencode($status):'' ?>" class="btn btn-outline btn-sm" onclick="localStorage.removeItem('ordersDateFrom');localStorage.removeItem('ordersDateTo')">Clear</a>
         <?php endif; ?>
       </form>
 
@@ -244,8 +290,13 @@ include __DIR__ . '/../../components/head.php';
               if (!isset($rowOptions[$o['status']])) {
                   $rowOptions = [$o['status'] => $allStatusLabels[$o['status']] ?? ucfirst($o['status'])] + $rowOptions;
               }
+
+              $isBlacklisted = $o['customer_phone'] && isset($blacklistSet[$o['customer_phone']]);
+              $rowDate       = date('Y-m-d', strtotime($o['created_at']));
+              $isDuplicate   = $o['customer_phone'] && isset($duplicateKeys[$o['customer_phone'] . '|' . $rowDate]);
+              $rowStyle      = $isBlacklisted ? 'background:#fef2f2' : ($isDuplicate ? 'background:#fefce8' : '');
             ?>
-            <tr>
+            <tr style="<?= $rowStyle ?>">
               <td>
                 <a href="<?= APP_URL ?>/pages/orders/view.php?id=<?= urlencode($o['order_id']) ?>"
                    style="font-weight:700;color:var(--primary);font-size:.85rem"><?= e($o['order_id']) ?></a>
@@ -254,6 +305,11 @@ include __DIR__ . '/../../components/head.php';
                 <div style="font-weight:600;font-size:.85rem"><?= e($o['customer_name']) ?></div>
                 <?php if ($o['customer_phone']): ?>
                 <div style="font-size:.74rem;color:var(--text-muted)"><?= e($o['customer_phone']) ?></div>
+                <?php endif; ?>
+                <?php if ($isBlacklisted): ?>
+                <div style="font-size:.68rem;font-weight:700;color:#b91c1c;margin-top:2px">⚠ Blacklisted</div>
+                <?php elseif ($isDuplicate): ?>
+                <div style="font-size:.68rem;font-weight:700;color:#92400e;margin-top:2px">⚠ Duplicate today</div>
                 <?php endif; ?>
               </td>
               <td class="text-muted"><?= $o['item_count'] ?> item<?= $o['item_count']!=1?'s':'' ?></td>
@@ -308,12 +364,44 @@ include __DIR__ . '/../../components/head.php';
     </div>
   </div>
 </div>
+
+<!-- Bulk Deliver by ID modal -->
+<div id="bulkDeliverModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:var(--radius-xl);padding:28px;max-width:440px;width:90%;box-shadow:var(--shadow-md)">
+    <div style="font-size:1.05rem;font-weight:700;margin-bottom:6px">Bulk Deliver by Order ID</div>
+    <p style="font-size:.86rem;color:var(--text-secondary);margin-bottom:12px">
+      Paste order IDs (one per line, or comma-separated). Only orders currently <strong>In Courier</strong> will be marked <strong>Delivered</strong>.
+    </p>
+    <textarea id="bulkDeliverIds" class="form-control" rows="6" placeholder="ORD-20260701-0001&#10;ORD-20260701-0002"></textarea>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('bulkDeliverModal').style.display='none'">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="submitBulkDeliver()">Mark Delivered</button>
+    </div>
+  </div>
+</div>
 <?php endif; ?>
 
 <div class="toast-container" id="toastContainer"></div>
 
 <script>
 const APP_URL = '<?= APP_URL ?>';
+
+// ── Date filter persistence (localStorage) ──────────────────
+(function persistDateFilter() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.has('date_from') || params.has('date_to')) {
+    localStorage.setItem('ordersDateFrom', params.get('date_from') || '');
+    localStorage.setItem('ordersDateTo', params.get('date_to') || '');
+    return;
+  }
+  const savedFrom = localStorage.getItem('ordersDateFrom');
+  const savedTo   = localStorage.getItem('ordersDateTo');
+  if (savedFrom || savedTo) {
+    if (savedFrom) params.set('date_from', savedFrom);
+    if (savedTo)   params.set('date_to', savedTo);
+    window.location.replace(window.location.pathname + '?' + params.toString());
+  }
+})();
 
 // In-row status dropdown change
 async function onStatusChange(selectEl) {
@@ -360,6 +448,55 @@ function confirmAllDispatched() {
       showToast(data.message || 'Failed', 'error');
     }
   };
+}
+
+async function dispatchAllConfirmed() {
+  const btn = document.getElementById('dispatchAllBtn');
+  btn.disabled = true;
+  const res  = await fetch(`${APP_URL}/api/orders.php?action=dispatch_all_confirmed`, { method: 'POST' });
+  const data = await res.json();
+  btn.disabled = false;
+  if (data.success) {
+    showToast(data.count > 0 ? `${data.count} order(s) dispatched` : 'No confirmed orders found', 'success');
+    setTimeout(() => location.reload(), 700);
+  } else {
+    showToast(data.message || 'Failed', 'error');
+  }
+}
+
+async function moveAllToCourier() {
+  const btn = document.getElementById('moveAllCourierBtn');
+  btn.disabled = true;
+  const res  = await fetch(`${APP_URL}/api/orders.php?action=move_all_to_courier`, { method: 'POST' });
+  const data = await res.json();
+  btn.disabled = false;
+  if (data.success) {
+    showToast(data.count > 0 ? `${data.count} order(s) moved to In Courier` : 'No dispatched orders found', 'success');
+    setTimeout(() => location.reload(), 700);
+  } else {
+    showToast(data.message || 'Failed', 'error');
+  }
+}
+
+async function submitBulkDeliver() {
+  const raw = document.getElementById('bulkDeliverIds').value;
+  const orderIds = raw.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+  if (!orderIds.length) { showToast('Paste at least one order ID', 'error'); return; }
+
+  document.getElementById('bulkDeliverModal').style.display = 'none';
+  const res  = await fetch(`${APP_URL}/api/orders.php?action=bulk_deliver`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ order_ids: orderIds })
+  });
+  const data = await res.json();
+  if (data.success) {
+    let msg = `${data.delivered} order(s) marked delivered`;
+    if (data.skipped?.length) msg += `, ${data.skipped.length} skipped`;
+    showToast(msg, 'success');
+    setTimeout(() => location.reload(), 900);
+  } else {
+    showToast(data.message || 'Failed', 'error');
+  }
 }
 <?php endif; ?>
 </script>
