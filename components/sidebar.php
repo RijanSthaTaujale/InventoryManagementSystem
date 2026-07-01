@@ -91,6 +91,30 @@ $userInitial = strtoupper(substr($userName, 0, 1));
       </svg>
       Settings
     </a>
+
+    <?php if ($role === 'admin'): ?>
+    <div style="margin:12px 0 4px;padding:0 12px;font-size:.68rem;font-weight:700;letter-spacing:.06em;color:var(--sidebar-text);text-transform:uppercase;opacity:.6">Admin</div>
+
+    <!-- Users -->
+    <a href="<?= APP_URL ?>/pages/admin/users.php"
+       class="nav-item <?= $activePage === 'users' ? 'active' : '' ?>">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+      </svg>
+      Users
+    </a>
+
+    <!-- Categories -->
+    <a href="<?= APP_URL ?>/pages/admin/categories.php"
+       class="nav-item <?= $activePage === 'categories' ? 'active' : '' ?>">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+        <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+      </svg>
+      Categories
+    </a>
+    <?php endif; ?>
   </nav>
 
   <!-- User info + logout -->

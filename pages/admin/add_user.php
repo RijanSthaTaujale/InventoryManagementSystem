@@ -7,7 +7,7 @@ $user = currentUser(); // must be assigned before the role check below
 
 if ($user['role'] !== 'admin') redirect('/pages/dashboard.php');
 
-$activePage = 'admin';
+$activePage = 'users';
 $editId     = (int)($_GET['edit'] ?? 0);
 $isEdit     = $editId > 0;
 $pageTitle  = $isEdit ? 'Edit User' : 'Add User';
