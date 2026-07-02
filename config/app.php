@@ -41,3 +41,14 @@ function redirect(string $path): void {
 function e(string $str): string {
     return htmlspecialchars($str, ENT_QUOTES, 'UTF-8');
 }
+
+// Read a key/value row from the settings table (cached per-request)
+function getSetting(string $key, string $default = ''): string {
+    static $cache = [];
+    if (array_key_exists($key, $cache)) return $cache[$key];
+    global $pdo;
+    $stmt = $pdo->prepare("SELECT value FROM settings WHERE `key` = ?");
+    $stmt->execute([$key]);
+    $val = $stmt->fetchColumn();
+    return $cache[$key] = ($val !== false ? $val : $default);
+}

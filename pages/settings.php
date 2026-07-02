@@ -73,6 +73,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     session_destroy();
     header('Location: ' . APP_URL . '/pages/login.php');
     exit;
+
+  } elseif ($action === 'business_info' && $role === 'admin') {
+    $fields = [
+      'business_name'    => trim($_POST['business_name']    ?? ''),
+      'business_pan'     => trim($_POST['business_pan']     ?? ''),
+      'business_address' => trim($_POST['business_address'] ?? ''),
+      'business_phone'   => trim($_POST['business_phone']   ?? ''),
+      'business_email'   => trim($_POST['business_email']   ?? ''),
+      'business_logo'    => trim($_POST['business_logo']    ?? ''),
+    ];
+    $stmt = $pdo->prepare("
+      INSERT INTO settings (`key`, `value`, updated_by) VALUES (?, ?, ?)
+      ON DUPLICATE KEY UPDATE value = VALUES(value), updated_by = VALUES(updated_by)
+    ");
+    foreach ($fields as $key => $value) {
+      $stmt->execute([$key, $value, $user['id']]);
+    }
+    $success = 'Business info updated successfully.';
   }
 }
  
@@ -211,6 +229,65 @@ include __DIR__ . '/../components/head.php';
         </div>
       </form>
  
+      <?php if ($role === 'admin'):
+        $bizName    = getSetting('business_name', 'Pompoy Apparels');
+        $bizPan     = getSetting('business_pan', '126106185');
+        $bizAddress = getSetting('business_address', 'Kalanki, Kathmandu');
+        $bizPhone   = getSetting('business_phone', '9802377999');
+        $bizEmail   = getSetting('business_email', 'sochejastai@gmail.com');
+        $bizLogo    = getSetting('business_logo', '/assets/images/business-logo.png');
+      ?>
+      <!-- ── Business / Bill Info ── -->
+      <form method="POST" id="businessForm" style="margin-bottom:16px">
+        <input type="hidden" name="action" value="business_info">
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+            <div style="width:36px;height:36px;background:#e0e7ff;border-radius:50%;display:flex;align-items:center;justify-content:center">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            </div>
+            <div class="card-title">Business / Bill Info</div>
+          </div>
+          <p style="font-size:.84rem;color:var(--text-secondary);margin-bottom:20px">This information appears on printed order bills.</p>
+
+          <div class="grid-2" style="gap:16px;margin-bottom:16px">
+            <div class="form-group">
+              <label class="form-label">Business Name</label>
+              <input type="text" name="business_name" class="form-control" value="<?= e($bizName) ?>">
+            </div>
+            <div class="form-group">
+              <label class="form-label">PAN No.</label>
+              <input type="text" name="business_pan" class="form-control" value="<?= e($bizPan) ?>">
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom:16px">
+            <label class="form-label">Address</label>
+            <input type="text" name="business_address" class="form-control" value="<?= e($bizAddress) ?>">
+          </div>
+          <div class="grid-2" style="gap:16px;margin-bottom:16px">
+            <div class="form-group">
+              <label class="form-label">Phone</label>
+              <input type="text" name="business_phone" class="form-control" value="<?= e($bizPhone) ?>">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Email</label>
+              <input type="email" name="business_email" class="form-control" value="<?= e($bizEmail) ?>">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Logo Path</label>
+            <div style="display:flex;align-items:center;gap:12px">
+              <img src="<?= APP_URL . e($bizLogo) ?>" alt="Logo preview" style="width:44px;height:44px;object-fit:contain;border:1px solid var(--border);border-radius:var(--radius-sm);background:#fff">
+              <input type="text" name="business_logo" class="form-control" value="<?= e($bizLogo) ?>" placeholder="/assets/images/business-logo.png">
+            </div>
+            <div class="form-hint">Path to a logo image file relative to the app root. Replace assets/images/business-logo.png to change it.</div>
+          </div>
+          <div style="margin-top:16px">
+            <button type="submit" class="btn btn-outline btn-sm">Save Business Info</button>
+          </div>
+        </div>
+      </form>
+      <?php endif; ?>
+
       <!-- ── Staff Deactivation ── -->
       <div class="card" style="border-color:#fecaca">
         <div style="display:flex;align-items:center;justify-content:space-between">

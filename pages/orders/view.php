@@ -144,6 +144,7 @@ include __DIR__ . '/../../components/head.php';
             <option value="<?= $val ?>" <?= $val === $currentStatus ? 'selected' : '' ?>><?= $label ?></option>
             <?php endforeach; ?>
           </select>
+          <a href="<?= APP_URL ?>/pages/orders/bill.php?id=<?= urlencode($order['order_id']) ?>" target="_blank" class="btn btn-outline btn-sm">Print Bill</a>
           <?php if ($isAdmin): ?>
           <a href="<?= APP_URL ?>/pages/orders/create.php" class="btn btn-outline btn-sm">New Order</a>
           <?php endif; ?>
