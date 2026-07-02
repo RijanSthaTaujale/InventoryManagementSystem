@@ -242,42 +242,6 @@ if ($action === 'status' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-// ── CONFIRM ALL DISPATCHED ORDERS (bulk, admin + supervisor) ──
-// Reverts every order currently in "dispatched" status back to "confirmed".
-// Use case: undo/recall a batch of orders that were dispatched in error.
-if ($action === 'confirm_all' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!$isAdmin && !$isSuper) {
-        echo json_encode(['success' => false, 'message' => 'Only admin or supervisor can do this.']); exit;
-    }
-
-    $rows = $pdo->query("SELECT id, order_id, stock_deducted FROM orders WHERE status='dispatched'")->fetchAll();
-    if (empty($rows)) {
-        echo json_encode(['success' => true, 'count' => 0, 'message' => 'No dispatched orders to confirm.']); exit;
-    }
-
-    $pdo->beginTransaction();
-    try {
-        foreach ($rows as $row) {
-            $pdo->prepare("UPDATE orders SET status='confirmed', updated_by=? WHERE id=?")
-                ->execute([$user['id'], $row['id']]);
-            $pdo->prepare("INSERT INTO order_status_log (order_id,from_status,to_status,changed_by) VALUES (?,'dispatched','confirmed',?)")
-                ->execute([$row['id'], $user['id']]);
-
-            // Undoing a dispatch must restore the stock that dispatch deducted
-            if ($row['stock_deducted']) {
-                adjustOrderStock($pdo, $row['id'], 'adjustment', 1, $user['id'], "Dispatch undone via Confirm All ({$row['order_id']})");
-                $pdo->prepare("UPDATE orders SET stock_deducted=0 WHERE id=?")->execute([$row['id']]);
-            }
-        }
-        $pdo->commit();
-        echo json_encode(['success' => true, 'count' => count($rows)]);
-    } catch (Exception $e) {
-        $pdo->rollBack();
-        echo json_encode(['success' => false, 'message' => 'Failed to update orders.']);
-    }
-    exit;
-}
-
 // ── BULK: DISPATCH ALL CONFIRMED (admin + supervisor) ─────────
 if ($action === 'dispatch_all_confirmed' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$isAdmin && !$isSuper) {

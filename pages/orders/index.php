@@ -171,10 +171,6 @@ include __DIR__ . '/../../components/head.php';
             Export CSV
           </a>
           <?php if ($isAdmin || $isSuper): ?>
-          <button onclick="confirmAllDispatched()" class="btn btn-outline" id="confirmAllBtn">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-            Confirm All Dispatched
-          </button>
           <button onclick="dispatchAllConfirmed()" class="btn btn-outline" id="dispatchAllBtn">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
             Dispatch All Confirmed
@@ -350,21 +346,7 @@ include __DIR__ . '/../../components/head.php';
   </div>
 </div>
 
-<!-- Confirm All modal -->
 <?php if ($isAdmin || $isSuper): ?>
-<div id="confirmAllModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center">
-  <div style="background:#fff;border-radius:var(--radius-xl);padding:28px;max-width:380px;width:90%;box-shadow:var(--shadow-md)">
-    <div style="font-size:1.05rem;font-weight:700;margin-bottom:6px">Confirm All Dispatched Orders</div>
-    <p style="font-size:.86rem;color:var(--text-secondary);margin-bottom:20px">
-      This will revert every order currently marked <strong>Dispatched</strong> back to <strong>Confirmed</strong>. Use this to undo a dispatch batch sent out by mistake.
-    </p>
-    <div style="display:flex;gap:10px;justify-content:flex-end">
-      <button class="btn btn-outline btn-sm" onclick="document.getElementById('confirmAllModal').style.display='none'">Cancel</button>
-      <button class="btn btn-primary btn-sm" id="confirmAllConfirmBtn">Yes, Confirm All</button>
-    </div>
-  </div>
-</div>
-
 <!-- Bulk Deliver by ID modal -->
 <div id="bulkDeliverModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:var(--radius-xl);padding:28px;max-width:440px;width:90%;box-shadow:var(--shadow-md)">
@@ -430,26 +412,6 @@ async function onStatusChange(selectEl) {
 }
 
 <?php if ($isAdmin || $isSuper): ?>
-function confirmAllDispatched() {
-  document.getElementById('confirmAllModal').style.display = 'flex';
-  document.getElementById('confirmAllConfirmBtn').onclick = async () => {
-    document.getElementById('confirmAllModal').style.display = 'none';
-    const btn = document.getElementById('confirmAllBtn');
-    btn.disabled = true;
-    const res = await fetch(`${APP_URL}/api/orders.php?action=confirm_all`, {
-      method: 'POST', headers: {'Content-Type':'application/json'}
-    });
-    const data = await res.json();
-    btn.disabled = false;
-    if (data.success) {
-      showToast(data.count > 0 ? `${data.count} order(s) confirmed` : 'No dispatched orders found', 'success');
-      setTimeout(() => location.reload(), 700);
-    } else {
-      showToast(data.message || 'Failed', 'error');
-    }
-  };
-}
-
 async function dispatchAllConfirmed() {
   const btn = document.getElementById('dispatchAllBtn');
   btn.disabled = true;
