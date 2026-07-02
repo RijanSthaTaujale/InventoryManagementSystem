@@ -113,12 +113,9 @@ $badgeMap = [
 ];
 
 // ── Role-based allowed status options for the dropdown ────────
-// "Confirmed" is intentionally excluded from the dropdown for all roles —
-// it still exists as a valid status elsewhere (tabs, filters, badges, old orders),
-// it just can't be manually selected here anymore.
-// admin: everything except confirmed
-// supervisor: everything except confirmed
-// staff: new, pending, cancelled, dispatched
+// admin: everything
+// supervisor: everything
+// staff: new, confirmed, pending, cancelled, dispatched
 $allStatusLabels = [
     'new'        => 'New',
     'confirmed'  => 'Confirmed',
@@ -130,16 +127,14 @@ $allStatusLabels = [
     'returned'   => 'Returned',
 ];
 
-$dropdownLabels = $allStatusLabels;
-unset($dropdownLabels['confirmed']); // not selectable via dropdown for anyone
-
 if ($isAdmin) {
-    $allowedStatusOptions = $dropdownLabels; // all except confirmed
+    $allowedStatusOptions = $allStatusLabels;
 } elseif ($isSuper) {
-    $allowedStatusOptions = $dropdownLabels; // all except confirmed
+    $allowedStatusOptions = $allStatusLabels;
 } else { // staff
     $allowedStatusOptions = [
         'new'        => 'New',
+        'confirmed'  => 'Confirmed',
         'pending'    => 'Pending',
         'cancelled'  => 'Cancelled',
         'dispatched' => 'Dispatched',

@@ -63,11 +63,9 @@ $badge    = $badgeMap[$order['status']] ?? 'badge-pending';
 $payBadge = $order['payment_status'] === 'paid' ? 'badge-confirmed' : ($order['payment_status'] === 'partial' ? 'badge-pending' : 'badge-cancelled');
 
 // What status changes are allowed per role?
-// "Confirmed" is intentionally excluded from the dropdown for all roles —
-// it still exists as a valid status elsewhere, it just can't be manually selected here.
-// Admin: everything except confirmed
-// Supervisor: everything except confirmed
-// Staff: new, pending, cancelled, dispatched
+// Admin: everything
+// Supervisor: everything
+// Staff: new, confirmed, pending, cancelled, dispatched
 $currentStatus = $order['status'];
 
 $allStatusLabels = [
@@ -81,16 +79,14 @@ $allStatusLabels = [
     'returned'   => 'Returned',
 ];
 
-$dropdownLabels = $allStatusLabels;
-unset($dropdownLabels['confirmed']); // not selectable via dropdown for anyone
-
 if ($isAdmin) {
-    $statusOptions = $dropdownLabels; // all except confirmed
+    $statusOptions = $allStatusLabels;
 } elseif ($isSuper) {
-    $statusOptions = $dropdownLabels; // all except confirmed
+    $statusOptions = $allStatusLabels;
 } else { // staff
     $statusOptions = [
         'new'        => 'New',
+        'confirmed'  => 'Confirmed',
         'pending'    => 'Pending',
         'cancelled'  => 'Cancelled',
         'dispatched' => 'Dispatched',
