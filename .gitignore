@@ -1,0 +1,4 @@
+# Database dumps (contain real credentials/customer data — never commit)
+*.sql.dump
+*_dump.sql
+inventorymanagement_full_dump.sql
