@@ -1,3 +1,4 @@
+<?php require_once __DIR__ . '/../config/app.php'; ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -5,7 +6,7 @@
 <title>Sign In — Inventory Pro</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="/InventoryManagement/assets/css/global.css"/>
+<link rel="stylesheet" href="<?= APP_URL ?>/assets/css/global.css"/>
 <style>
 body{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#f1f5f9;padding:24px 16px;margin:0}
 .auth-card{background:#fff;border-radius:20px;padding:40px 36px 32px;box-shadow:0 8px 40px rgba(0,0,0,.10);width:100%;max-width:400px}
@@ -94,6 +95,7 @@ body{display:flex;align-items:center;justify-content:center;min-height:100vh;bac
 </div>
 
 <script>
+const APP_URL = '<?= APP_URL ?>';
 let role = 'staff';
 const logo    = document.getElementById('authLogo');
 const tabS    = document.getElementById('tabStaff');
@@ -143,7 +145,7 @@ async function doLogin() {
   hideErr();
 
   try {
-    const res  = await fetch('/InventoryManagement/api/auth.php?action=login', {
+    const res  = await fetch(`${APP_URL}/api/auth.php?action=login`, {
       method: 'POST', credentials: 'include',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({email, password})
