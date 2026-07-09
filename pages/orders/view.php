@@ -145,6 +145,9 @@ include __DIR__ . '/../../components/head.php';
             <?php endforeach; ?>
           </select>
           <a href="<?= APP_URL ?>/pages/orders/bill.php?id=<?= urlencode($order['order_id']) ?>" target="_blank" class="btn btn-outline btn-sm">Print Bill</a>
+          <?php if (in_array($order['status'], ['new', 'pending', 'confirmed'])): ?>
+          <a href="<?= APP_URL ?>/pages/orders/create.php?edit=<?= urlencode($order['order_id']) ?>" class="btn btn-outline btn-sm">Edit Order</a>
+          <?php endif; ?>
           <?php if ($isAdmin): ?>
           <a href="<?= APP_URL ?>/pages/orders/create.php" class="btn btn-outline btn-sm">New Order</a>
           <?php endif; ?>

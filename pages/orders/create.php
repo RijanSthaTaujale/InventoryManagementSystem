@@ -4,15 +4,42 @@ require_once __DIR__ . '/../../config/app.php';
 require_once __DIR__ . '/../../config/auth_guard.php';
 
 $activePage = 'order';
-$pageTitle  = 'New Order';
 $user       = currentUser();
 $isAdmin    = $user['role'] === 'admin';
 $currency   = 'Rs';
 
-// Generate next order ID preview
-$last    = $pdo->query("SELECT order_id FROM orders ORDER BY id DESC LIMIT 1")->fetchColumn();
-$num     = $last ? (int)substr($last, strrpos($last,'-')+1) + 1 : 1;
-$nextId  = 'ORD-' . date('Y') . '-' . str_pad($num, 5, '0', STR_PAD_LEFT);
+// Only orders that haven't been dispatched yet (no stock movement to reconcile) can be edited
+$editableStatuses = ['new', 'pending', 'confirmed'];
+
+$editOrderId = trim($_GET['edit'] ?? '');
+$isEditMode  = $editOrderId !== '';
+$order       = null;
+$orderItems  = [];
+
+if ($isEditMode) {
+    $stmt = $pdo->prepare("SELECT * FROM orders WHERE order_id=?");
+    $stmt->execute([$editOrderId]);
+    $order = $stmt->fetch();
+    if (!$order) redirect('/pages/orders/index.php');
+    if (!in_array($order['status'], $editableStatuses)) redirect('/pages/orders/view.php?id=' . urlencode($order['order_id']));
+
+    $itemsStmt = $pdo->prepare("
+        SELECT oi.*, p.product_id AS product_code, p.quantity AS current_stock
+        FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id
+        WHERE oi.order_id=?
+    ");
+    $itemsStmt->execute([$order['id']]);
+    $orderItems = $itemsStmt->fetchAll();
+}
+
+$pageTitle = $isEditMode ? 'Edit Order' : 'New Order';
+
+// Generate next order ID preview (only relevant when creating)
+if (!$isEditMode) {
+    $last   = $pdo->query("SELECT order_id FROM orders ORDER BY id DESC LIMIT 1")->fetchColumn();
+    $num    = $last ? (int)substr($last, strrpos($last,'-')+1) + 1 : 1;
+    $nextId = 'ORD-' . date('Y') . '-' . str_pad($num, 5, '0', STR_PAD_LEFT);
+}
 
 $fbPages = $pdo->query("SELECT id, name FROM fb_pages WHERE status='active' ORDER BY name")->fetchAll();
 
@@ -31,15 +58,15 @@ include __DIR__ . '/../../components/head.php';
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> Orders
             </a>
             <span style="color:var(--text-muted);font-size:.82rem">/</span>
-            <span style="font-size:.82rem">New Order</span>
+            <span style="font-size:.82rem"><?= $isEditMode ? 'Edit Order' : 'New Order' ?></span>
           </div>
-          <h1 style="font-size:1.25rem;font-weight:700">Add New Order</h1>
+          <h1 style="font-size:1.25rem;font-weight:700"><?= $isEditMode ? 'Edit Order — ' . e($order['order_id']) : 'Add New Order' ?></h1>
         </div>
         <div style="display:flex;gap:8px">
-          <a href="<?= APP_URL ?>/pages/orders/index.php" class="btn btn-outline btn-sm">Cancel</a>
+          <a href="<?= APP_URL ?>/pages/orders/<?= $isEditMode ? 'view.php?id=' . urlencode($order['order_id']) : 'index.php' ?>" class="btn btn-outline btn-sm">Cancel</a>
           <button class="btn btn-primary" onclick="submitOrder()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/></svg>
-            Place Order
+            <?= $isEditMode ? 'Update Order' : 'Place Order' ?>
           </button>
         </div>
       </div>
@@ -185,7 +212,7 @@ include __DIR__ . '/../../components/head.php';
             <div style="display:flex;flex-direction:column;gap:8px;font-size:.88rem">
               <div style="display:flex;justify-content:space-between;color:var(--text-secondary)">
                 <span>Order ID</span>
-                <span style="font-weight:600;color:var(--text)"><?= $nextId ?></span>
+                <span style="font-weight:600;color:var(--text)"><?= $isEditMode ? e($order['order_id']) : $nextId ?></span>
               </div>
               <div style="display:flex;justify-content:space-between;color:var(--text-secondary)">
                 <span>Items</span>
@@ -219,7 +246,7 @@ include __DIR__ . '/../../components/head.php';
 
           <button class="btn btn-primary" style="width:100%" onclick="submitOrder()">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-            Place Order
+            <?= $isEditMode ? 'Update Order' : 'Place Order' ?>
           </button>
           <div id="orderError" style="display:none;padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:var(--radius-md);color:#b91c1c;font-size:.83rem"></div>
         </div>
@@ -251,7 +278,34 @@ include __DIR__ . '/../../components/head.php';
 <script>
 const APP_URL  = '<?= APP_URL ?>';
 const CURRENCY = '<?= $currency ?>';
-let items = [];
+const IS_EDIT  = <?= $isEditMode ? 'true' : 'false' ?>;
+<?php if ($isEditMode): ?>
+const EDIT_ORDER = <?= json_encode([
+    'order_id'        => $order['order_id'],
+    'customer_name'   => $order['customer_name'],
+    'customer_phone'  => $order['customer_phone'],
+    'customer_email'  => $order['customer_email'],
+    'customer_address'=> $order['customer_address'],
+    'fb_page_id'      => $order['fb_page_id'],
+    'shipping_method' => $order['shipping_method'],
+    'payment_method'  => $order['payment_method'],
+    'courier_name'    => $order['courier_name'],
+    'courier_charge'  => $order['courier_charge'],
+    'discount'        => $order['discount'],
+    'discount_type'   => $order['discount_type'],
+    'remarks'         => $order['remarks'],
+    'items'           => array_map(fn($it) => [
+        'id'         => (int)$it['product_id'],
+        'name'       => $it['product_name'],
+        'product_id' => $it['product_code'] ?? $it['product_name'],
+        'sell_price' => (float)$it['sell_price'],
+        'buy_price'  => (float)$it['buy_price'],
+        'qty'        => (int)$it['qty'],
+        'max_qty'    => $it['current_stock'] !== null ? (int)$it['current_stock'] : 999,
+    ], $orderItems),
+]) ?>;
+<?php endif; ?>
+let items = IS_EDIT ? EDIT_ORDER.items : [];
 
 // ── Product Search ───────────────────────────────────────────
 const searchInput = document.getElementById('productSearch');
@@ -355,7 +409,8 @@ async function checkDuplicatePhone() {
   const phone = document.getElementById('custPhone').value.trim();
   if (!/^\d{10}$/.test(phone)) return;
 
-  const r = await fetch(`${APP_URL}/api/orders.php?action=check_duplicate&phone=${encodeURIComponent(phone)}`);
+  const excludeParam = IS_EDIT ? `&exclude_order_id=${encodeURIComponent(EDIT_ORDER.order_id)}` : '';
+  const r = await fetch(`${APP_URL}/api/orders.php?action=check_duplicate&phone=${encodeURIComponent(phone)}${excludeParam}`);
   const d = await r.json();
   if (d.success && d.duplicate) {
     warnDiv.textContent = `⚠ This phone number already has an order today (${d.order_id}).`;
@@ -423,31 +478,56 @@ async function submitOrder() {
     remarks:          document.getElementById('remarks').value.trim(),
     items: items.map(i => ({ product_id: i.id, product_name: i.name, qty: i.qty, sell_price: i.sell_price, buy_price: i.buy_price, total: i.qty * i.sell_price }))
   };
+  if (IS_EDIT) payload.order_id = EDIT_ORDER.order_id;
 
-  const btn = document.querySelector('button.btn-primary');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Placing...';
+  const btns = document.querySelectorAll('button.btn-primary');
+  const busyLabel = IS_EDIT ? 'Updating...' : 'Placing...';
+  const idleLabel = IS_EDIT ? 'Update Order' : 'Place Order';
+  btns.forEach(b => { b.disabled = true; b.innerHTML = `<span class="spinner"></span> ${busyLabel}`; });
 
   try {
-    const r = await fetch(`${APP_URL}/api/orders.php?action=create`, {
+    const r = await fetch(`${APP_URL}/api/orders.php?action=${IS_EDIT ? 'update' : 'create'}`, {
       method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
     });
     const d = await r.json();
     if (d.success) {
-      showToast('Order created!','success');
+      showToast(IS_EDIT ? 'Order updated!' : 'Order created!','success');
       setTimeout(() => window.location.href = `${APP_URL}/pages/orders/view.php?id=${d.order_id}`, 700);
     } else {
-      errDiv.textContent = d.message || 'Failed to create order.';
+      errDiv.textContent = d.message || `Failed to ${IS_EDIT ? 'update' : 'create'} order.`;
       errDiv.style.display = 'block';
-      btn.disabled = false;
-      btn.innerHTML = 'Place Order';
+      btns.forEach(b => { b.disabled = false; b.textContent = idleLabel; });
     }
   } catch(e) {
     errDiv.textContent = 'Network error. Please try again.';
     errDiv.style.display = 'block';
-    btn.disabled = false;
-    btn.innerHTML = 'Place Order';
+    btns.forEach(b => { b.disabled = false; b.textContent = idleLabel; });
   }
+}
+
+// ── Prefill form when editing an existing order ───────────────
+if (IS_EDIT) {
+  document.getElementById('custName').value    = EDIT_ORDER.customer_name || '';
+  document.getElementById('custPhone').value   = EDIT_ORDER.customer_phone || '';
+  document.getElementById('custEmail').value   = EDIT_ORDER.customer_email || '';
+  document.getElementById('custAddress').value = EDIT_ORDER.customer_address || '';
+  if (EDIT_ORDER.fb_page_id) document.getElementById('fbPage').value = EDIT_ORDER.fb_page_id;
+  if (EDIT_ORDER.shipping_method) document.getElementById('shippingMethod').value = EDIT_ORDER.shipping_method;
+  if (EDIT_ORDER.payment_method) document.getElementById('paymentMethod').value = EDIT_ORDER.payment_method;
+  document.getElementById('courierName').value   = EDIT_ORDER.courier_name || '';
+  document.getElementById('courierCharge').value = EDIT_ORDER.courier_charge || 0;
+  document.getElementById('remarks').value       = EDIT_ORDER.remarks || '';
+
+  const discAmt = parseFloat(EDIT_ORDER.discount) || 0;
+  document.getElementById('discountType').value = EDIT_ORDER.discount_type || 'fixed';
+  // discount is stored as a resolved amount; if it was a percent discount, back-convert to the % for display
+  const subtotalAtSave = items.reduce((s,i) => s + i.qty * i.sell_price, 0);
+  document.getElementById('discountAmt').value = (EDIT_ORDER.discount_type === 'percent' && subtotalAtSave > 0)
+    ? +(discAmt / subtotalAtSave * 100).toFixed(2)
+    : discAmt;
+
+  renderItems();
+  recalc();
 }
 </script>
 <?php include __DIR__ . '/../../components/foot.php'; ?>

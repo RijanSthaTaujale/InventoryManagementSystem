@@ -161,17 +161,19 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // ── CHECK DUPLICATE (same phone, same day) ───────────────────
 if ($action === 'check_duplicate' && $_SERVER['REQUEST_METHOD'] === 'GET') {
-    $phone = trim($_GET['phone'] ?? '');
+    $phone          = trim($_GET['phone'] ?? '');
+    $excludeOrderId = trim($_GET['exclude_order_id'] ?? '');
     if (!preg_match('/^\d{10}$/', $phone)) {
         echo json_encode(['success' => true, 'duplicate' => false]); exit;
     }
 
-    $stmt = $pdo->prepare("
-        SELECT order_id, created_at FROM orders
-        WHERE customer_phone = ? AND DATE(created_at) = CURDATE()
-        ORDER BY created_at DESC LIMIT 1
-    ");
-    $stmt->execute([$phone]);
+    $sql    = "SELECT order_id, created_at FROM orders WHERE customer_phone = ? AND DATE(created_at) = CURDATE()";
+    $params = [$phone];
+    if ($excludeOrderId) { $sql .= " AND order_id != ?"; $params[] = $excludeOrderId; }
+    $sql .= " ORDER BY created_at DESC LIMIT 1";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
     $existing = $stmt->fetch();
 
     echo json_encode([
@@ -179,6 +181,127 @@ if ($action === 'check_duplicate' && $_SERVER['REQUEST_METHOD'] === 'GET') {
         'duplicate' => (bool)$existing,
         'order_id'  => $existing['order_id'] ?? null,
     ]);
+    exit;
+}
+
+// ── UPDATE ORDER (details + items; pre-dispatch orders only) ──
+if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $body    = json_decode(file_get_contents('php://input'), true);
+    $orderId = trim($body['order_id'] ?? '');
+    if (!$orderId) { echo json_encode(['success' => false, 'message' => 'Order ID is required.']); exit; }
+
+    $stmt = $pdo->prepare("SELECT id, status FROM orders WHERE order_id=?");
+    $stmt->execute([$orderId]);
+    $existing = $stmt->fetch();
+    if (!$existing) { echo json_encode(['success' => false, 'message' => 'Order not found.']); exit; }
+
+    $editableStatuses = ['new', 'pending', 'confirmed'];
+    if (!in_array($existing['status'], $editableStatuses)) {
+        echo json_encode(['success' => false, 'message' => "This order can no longer be edited (status: {$existing['status']})."]); exit;
+    }
+
+    $customer_name    = trim($body['customer_name']    ?? '');
+    $customer_phone   = trim($body['customer_phone']   ?? '');
+    $customer_email   = trim($body['customer_email']   ?? '');
+    $customer_address = trim($body['customer_address'] ?? '');
+    $fb_page_id       = (int)($body['fb_page_id']      ?? 0) ?: null;
+    $payment_method   = trim($body['payment_method']   ?? 'cash');
+    $shipping_method  = trim($body['shipping_method']  ?? '');
+    $shipping_cost    = (float)($body['shipping_cost'] ?? 0);
+    $courier_name     = trim($body['courier_name']     ?? '');
+    $courier_charge   = (float)($body['courier_charge'] ?? 0);
+    $discount         = (float)($body['discount']      ?? 0);
+    $discount_type    = trim($body['discount_type']    ?? 'fixed');
+    $remarks          = trim($body['remarks']          ?? '');
+    $items            = $body['items'] ?? [];
+
+    if (!$customer_name) {
+        echo json_encode(['success' => false, 'message' => 'Customer name is required.']); exit;
+    }
+    if (!preg_match('/^\d{10}$/', $customer_phone)) {
+        echo json_encode(['success' => false, 'message' => 'Phone number must be exactly 10 digits.']); exit;
+    }
+    if (empty($items)) {
+        echo json_encode(['success' => false, 'message' => 'Order must have at least one item.']); exit;
+    }
+
+    // Validate and price each item (same rules as create)
+    $lineItems = [];
+    $subtotal  = 0;
+    foreach ($items as $item) {
+        $product_id = (int)($item['product_id'] ?? 0);
+        $qty        = (int)($item['qty']        ?? 0);
+        if (!$product_id || $qty < 1) continue;
+
+        $p = $pdo->prepare("SELECT id, name, sell_price, buy_price, quantity FROM products WHERE id=? AND status='active'");
+        $p->execute([$product_id]);
+        $product = $p->fetch();
+        if (!$product) {
+            echo json_encode(['success' => false, 'message' => "Product ID $product_id not found."]); exit;
+        }
+        if ($product['quantity'] < $qty) {
+            echo json_encode(['success' => false, 'message' => "Insufficient stock for {$product['name']}."]); exit;
+        }
+
+        $sell_price   = (float)($item['sell_price'] ?? $product['sell_price']);
+        $buy_price    = (float)$product['buy_price'];
+        $line_total   = $sell_price * $qty;
+        $subtotal    += $line_total;
+
+        $lineItems[] = [
+            'product_id'   => $product_id,
+            'product_name' => $product['name'],
+            'qty'          => $qty,
+            'sell_price'   => $sell_price,
+            'buy_price'    => $buy_price,
+            'total'        => $line_total,
+            'variant_info' => trim($item['variant_info'] ?? '') ?: null,
+        ];
+    }
+
+    if (empty($lineItems)) {
+        echo json_encode(['success' => false, 'message' => 'No valid items in order.']); exit;
+    }
+
+    $discountAmount = $discount_type === 'percent'
+        ? round($subtotal * ($discount / 100), 2)
+        : $discount;
+    $total = max(0, $subtotal - $discountAmount + $shipping_cost);
+
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare("
+            UPDATE orders SET
+                customer_name=?, customer_phone=?, customer_email=?, customer_address=?, fb_page_id=?,
+                subtotal=?, discount=?, discount_type=?, shipping_cost=?, shipping_method=?,
+                courier_name=?, courier_charge=?, total=?, payment_method=?, remarks=?, updated_by=?
+            WHERE id=?
+        ")->execute([
+            $customer_name, $customer_phone ?: null, $customer_email ?: null, $customer_address ?: null, $fb_page_id,
+            $subtotal, $discountAmount, $discount_type, $shipping_cost, $shipping_method ?: null,
+            $courier_name ?: null, $courier_charge, $total, $payment_method, $remarks ?: null, $user['id'],
+            $existing['id'],
+        ]);
+
+        // Replace line items wholesale — safe because editable statuses are always pre-dispatch (no stock movement to reconcile)
+        $pdo->prepare("DELETE FROM order_items WHERE order_id=?")->execute([$existing['id']]);
+        foreach ($lineItems as $li) {
+            $pdo->prepare("
+                INSERT INTO order_items
+                    (order_id, product_id, product_name, variant_info, qty, sell_price, buy_price, total)
+                VALUES (?,?,?,?,?,?,?,?)
+            ")->execute([
+                $existing['id'], $li['product_id'], $li['product_name'], $li['variant_info'],
+                $li['qty'], $li['sell_price'], $li['buy_price'], $li['total'],
+            ]);
+        }
+
+        $pdo->commit();
+        echo json_encode(['success' => true, 'order_id' => $orderId]);
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        echo json_encode(['success' => false, 'message' => 'Failed to update order. Please try again.']);
+    }
     exit;
 }
 
