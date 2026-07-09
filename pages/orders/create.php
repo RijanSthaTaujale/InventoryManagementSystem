@@ -24,7 +24,7 @@ if ($isEditMode) {
     if (!in_array($order['status'], $editableStatuses)) redirect('/pages/orders/view.php?id=' . urlencode($order['order_id']));
 
     $itemsStmt = $pdo->prepare("
-        SELECT oi.*, p.product_id AS product_code, p.quantity AS current_stock
+        SELECT oi.*, p.product_id AS product_code
         FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id
         WHERE oi.order_id=?
     ");
@@ -301,7 +301,6 @@ const EDIT_ORDER = <?= json_encode([
         'sell_price' => (float)$it['sell_price'],
         'buy_price'  => (float)$it['buy_price'],
         'qty'        => (int)$it['qty'],
-        'max_qty'    => $it['current_stock'] !== null ? (int)$it['current_stock'] : 999,
     ], $orderItems),
 ]) ?>;
 <?php endif; ?>
@@ -345,7 +344,7 @@ function addItem(p) {
   // Check if already in list
   const existing = items.find(i => i.id === p.id);
   if (existing) { existing.qty++; renderItems(); recalc(); return; }
-  items.push({ id: p.id, name: p.name, product_id: p.product_id, sell_price: parseFloat(p.sell_price), buy_price: parseFloat(p.buy_price), qty: 1, max_qty: p.quantity });
+  items.push({ id: p.id, name: p.name, product_id: p.product_id, sell_price: parseFloat(p.sell_price), buy_price: parseFloat(p.buy_price), qty: 1 });
   renderItems();
   recalc();
 }
@@ -363,7 +362,7 @@ function renderItems() {
         <div style="font-size:.74rem;color:var(--text-muted)">${item.product_id}</div>
       </td>
       <td>
-        <input type="number" value="${item.qty}" min="1" max="${item.max_qty||999}"
+        <input type="number" value="${item.qty}" min="1"
                onchange="updateQty(${i}, this.value)"
                style="width:70px;padding:5px 8px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:.84rem;text-align:center">
       </td>

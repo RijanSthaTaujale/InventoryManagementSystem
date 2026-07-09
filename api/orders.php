@@ -27,7 +27,9 @@ function adjustOrderStock(PDO $pdo, int $orderDbId, string $adjType, int $direct
         if (!$product) continue;
 
         $qtyBefore = (int)$product['quantity'];
-        $qtyAfter  = max(0, $qtyBefore + $qtyChange);
+        // No floor at 0 — dispatching more than what's in stock is allowed and
+        // pushes quantity negative (backorder) rather than being blocked.
+        $qtyAfter  = $qtyBefore + $qtyChange;
         $min       = (int)$product['min_stock_level'];
         $stockStatus = $qtyAfter <= 0 ? 'outofstock' : ($qtyAfter <= 2 ? 'critical' : ($qtyAfter <= $min ? 'lowstock' : 'instock'));
 
@@ -83,9 +85,7 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$product) {
             echo json_encode(['success' => false, 'message' => "Product ID $product_id not found."]); exit;
         }
-        if ($product['quantity'] < $qty) {
-            echo json_encode(['success' => false, 'message' => "Insufficient stock for {$product['name']}."]); exit;
-        }
+        // Orders are allowed regardless of stock level — quantity may go negative (backorder).
 
         $sell_price   = (float)($item['sell_price'] ?? $product['sell_price']);
         $buy_price    = (float)$product['buy_price'];
@@ -239,9 +239,7 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$product) {
             echo json_encode(['success' => false, 'message' => "Product ID $product_id not found."]); exit;
         }
-        if ($product['quantity'] < $qty) {
-            echo json_encode(['success' => false, 'message' => "Insufficient stock for {$product['name']}."]); exit;
-        }
+        // Orders are allowed regardless of stock level — quantity may go negative (backorder).
 
         $sell_price   = (float)($item['sell_price'] ?? $product['sell_price']);
         $buy_price    = (float)$product['buy_price'];
