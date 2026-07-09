@@ -25,12 +25,29 @@ try {
 
   <!-- Actions -->
   <div class="topbar-actions">
-    <!-- Messages -->
-    <button class="topbar-icon-btn" title="Messages">
+    <!-- Chat assistant -->
+    <button class="topbar-icon-btn" title="Chat Assistant" id="chatBtn">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
       </svg>
     </button>
+
+    <!-- Chat panel (hidden by default) -->
+    <div id="chatPanel" style="display:none;position:absolute;top:50px;right:110px;width:340px;height:440px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);z-index:500;overflow:hidden;flex-direction:column">
+      <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+        <span style="font-weight:700;font-size:.9rem">Chat Assistant</span>
+        <button onclick="document.getElementById('chatPanel').style.display='none'" style="background:none;border:none;cursor:pointer;color:var(--text-muted);display:flex">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div id="chatMessages" style="flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px">
+        <div style="align-self:flex-start;max-width:85%;background:var(--bg);padding:8px 12px;border-radius:var(--radius-md);font-size:.84rem;color:var(--text-secondary)">Hi! How can I help you?</div>
+      </div>
+      <div style="padding:10px;border-top:1px solid var(--border);display:flex;gap:8px;flex-shrink:0">
+        <input type="text" id="chatInput" class="form-control" placeholder="Type a message..." style="font-size:.84rem" onkeydown="if(event.key==='Enter')sendChatMessage()">
+        <button onclick="sendChatMessage()" class="btn btn-primary btn-sm" id="chatSendBtn">Send</button>
+      </div>
+    </div>
 
     <!-- Notifications -->
     <button class="topbar-icon-btn" title="Notifications" id="notifBtn">
@@ -118,11 +135,78 @@ document.getElementById('avatarBtn')?.addEventListener('click', (e) => {
   if (d) d.style.display = d.style.display === 'none' ? 'block' : 'none';
 });
 
+// Chat panel
+document.getElementById('chatBtn')?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const c = document.getElementById('chatPanel');
+  const n = document.getElementById('notifDropdown');
+  const a = document.getElementById('avatarDropdown');
+  if (n) n.style.display = 'none';
+  if (a) a.style.display = 'none';
+  if (c) {
+    c.style.display = c.style.display === 'none' ? 'flex' : 'none';
+    if (c.style.display === 'flex') document.getElementById('chatInput')?.focus();
+  }
+});
+document.getElementById('chatPanel')?.addEventListener('click', e => e.stopPropagation());
+
 // Close dropdowns on outside click
 document.addEventListener('click', () => {
   const d = document.getElementById('notifDropdown');
   const a = document.getElementById('avatarDropdown');
+  const c = document.getElementById('chatPanel');
   if (d) d.style.display = 'none';
   if (a) a.style.display = 'none';
+  if (c) c.style.display = 'none';
 });
+
+// ── Chat assistant ───────────────────────────────────────────
+const CHAT_APP_URL = '<?= APP_URL ?>';
+
+function chatSessionId() {
+  let id = localStorage.getItem('chatSessionId');
+  if (!id) {
+    id = 'sess-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+    localStorage.setItem('chatSessionId', id);
+  }
+  return id;
+}
+
+function appendChatMessage(text, from) {
+  const wrap = document.getElementById('chatMessages');
+  const bubble = document.createElement('div');
+  const isUser = from === 'user';
+  bubble.style.cssText = `align-self:${isUser ? 'flex-end' : 'flex-start'};max-width:85%;padding:8px 12px;border-radius:var(--radius-md);font-size:.84rem;white-space:pre-wrap;` +
+    (isUser ? 'background:var(--primary);color:#fff' : 'background:var(--bg);color:var(--text-secondary)');
+  bubble.textContent = text;
+  wrap.appendChild(bubble);
+  wrap.scrollTop = wrap.scrollHeight;
+  return bubble;
+}
+
+async function sendChatMessage() {
+  const input = document.getElementById('chatInput');
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+  appendChatMessage(msg, 'user');
+
+  const btn = document.getElementById('chatSendBtn');
+  btn.disabled = true;
+  const thinking = appendChatMessage('...', 'bot');
+
+  try {
+    const r = await fetch(`${CHAT_APP_URL}/api/chat.php`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ message: msg, session_id: chatSessionId() })
+    });
+    const d = await r.json();
+    thinking.textContent = d.success ? d.reply : (d.message || 'Something went wrong.');
+  } catch (e) {
+    thinking.textContent = 'Network error. Please try again.';
+  } finally {
+    btn.disabled = false;
+    document.getElementById('chatMessages').scrollTop = document.getElementById('chatMessages').scrollHeight;
+  }
+}
 </script>
