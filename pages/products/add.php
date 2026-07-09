@@ -2,6 +2,7 @@
 // pages/products/add.php  (admin only)
 require_once __DIR__ . '/../../config/app.php';
 require_once __DIR__ . '/../../config/auth_guard.php';
+require_once __DIR__ . '/../../config/uploads.php';
 
 $user = currentUser();
 
@@ -45,8 +46,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $buy_price  = (float)($d['buy_price']  ?? 0);
     $quantity   = (int)($d['quantity']     ?? 0);
 
+    $imageError = null;
+    if (!empty($_FILES['image_file']['tmp_name'])) {
+        $check = validateImageUpload($_FILES['image_file']);
+        if (!$check['ok']) $imageError = $check['message'];
+    }
+
     if (!$name)        { $error = 'Product name is required.'; }
     elseif (!$sell_price) { $error = 'Sell price is required.'; }
+    elseif ($imageError)  { $error = $imageError; }
     else {
         // Auto product_id
         if (!$isEdit) {
@@ -71,6 +79,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             : ($quantity <= 2 ? 'critical'
             : ($quantity <= $min_stock ? 'lowstock' : 'instock'));
 
+        // Image upload — keep existing image on edit if no new file is chosen.
+        // Already validated above, so a failure here only means a filesystem
+        // error, in which case the image is simply left untouched.
+        $image_url = $isEdit ? ($product['image_url'] ?? null) : null;
+        if (!empty($_FILES['image_file']['tmp_name'])) {
+            $saved = saveUploadedImage($_FILES['image_file'], __DIR__ . '/../../assets/uploads/products');
+            if ($saved) {
+                // Clean up the old local file being replaced (leave external URLs alone)
+                if ($isEdit && $image_url && str_starts_with($image_url, '/assets/uploads/products/')) {
+                    @unlink(__DIR__ . '/../../' . ltrim($image_url, '/'));
+                }
+                $image_url = '/assets/uploads/products/' . $saved;
+            }
+        }
+
         $fields = [
             'name'            => $name,
             'slug'            => $slug,
@@ -80,7 +103,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'description'     => trim($d['description'] ?? '') ?: null,
             'buy_price'       => $buy_price,
             'sell_price'      => $sell_price,
-            'image_url'       => trim($d['image_url'] ?? '') ?: null,
+            'image_url'       => $image_url,
             'quantity'        => $quantity,
             'min_stock_level' => $min_stock,
             'max_stock_level' => (int)($d['max_stock_level'] ?? 1000),
@@ -199,7 +222,7 @@ include __DIR__ . '/../../components/head.php';
       </div>
       <?php endif; ?>
 
-      <form method="POST" id="productForm">
+      <form method="POST" id="productForm" enctype="multipart/form-data">
         <div style="display:grid;grid-template-columns:1fr 340px;gap:16px;align-items:start">
 
           <!-- LEFT COLUMN -->
@@ -242,9 +265,20 @@ include __DIR__ . '/../../components/head.php';
                   <textarea name="description" class="form-control" rows="4" placeholder="Product description..."><?= e($product['description'] ?? '') ?></textarea>
                 </div>
                 <div class="form-group">
-                  <label class="form-label">Image URL</label>
-                  <input type="url" name="image_url" class="form-control" value="<?= e($product['image_url'] ?? '') ?>" placeholder="https://...">
-                  <div class="form-hint">Main product image URL</div>
+                  <label class="form-label">Product Image</label>
+                  <div style="display:flex;align-items:center;gap:12px">
+                    <div id="imagePreviewWrap" style="width:56px;height:56px;border-radius:var(--radius-sm);overflow:hidden;border:1px solid var(--border);background:var(--bg);flex-shrink:0;<?= empty($product['image_url']) ? 'display:none' : '' ?>">
+                      <img id="imagePreview" src="<?= e($product['image_url'] ?? '') ? APP_URL . e($product['image_url']) : '' ?>" style="width:100%;height:100%;object-fit:cover">
+                    </div>
+                    <div style="flex:1">
+                      <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('imageInput').click()">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:4px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        <?= !empty($product['image_url']) ? 'Replace Image' : 'Upload Image' ?>
+                      </button>
+                      <input type="file" name="image_file" id="imageInput" accept=".jpg,.jpeg,.png,.gif,.webp" style="display:none" onchange="previewImage(this)">
+                      <div class="form-hint" id="imageFileName">JPG, PNG, GIF, or WEBP — up to 5MB<?= !empty($product['image_url']) ? '. Leave blank to keep the current image.' : '' ?></div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -398,6 +432,18 @@ include __DIR__ . '/../../components/head.php';
 <div class="toast-container" id="toastContainer"></div>
 
 <script>
+function previewImage(input) {
+  const file = input.files[0];
+  if (!file) return;
+  document.getElementById('imageFileName').textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = e => {
+    document.getElementById('imagePreview').src = e.target.result;
+    document.getElementById('imagePreviewWrap').style.display = '';
+  };
+  reader.readAsDataURL(file);
+}
+
 function addVariant() {
   document.getElementById('noVariants')?.remove();
   const row = document.createElement('div');

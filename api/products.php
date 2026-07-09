@@ -21,7 +21,9 @@ if ($action === 'search') {
     $like = "%$q%";
     $stmt = $pdo->prepare("SELECT id,product_id,name,sell_price,buy_price,quantity,image_url,stock_status FROM products WHERE status='active' AND (name LIKE ? OR product_id LIKE ? OR sku LIKE ?) LIMIT 20");
     $stmt->execute([$like,$like,$like]);
-    echo json_encode(['success'=>true,'products'=>$stmt->fetchAll()]);
+    $products = $stmt->fetchAll();
+    foreach ($products as &$p) { $p['image_url'] = productImageUrl($p['image_url']); }
+    echo json_encode(['success'=>true,'products'=>$products]);
     exit;
 }
 

@@ -90,7 +90,7 @@ include __DIR__ . '/../../components/head.php';
               <!-- Image gallery -->
               <div>
                 <div style="width:200px;height:200px;background:var(--bg);border-radius:var(--radius-md);overflow:hidden;margin-bottom:8px" id="mainImg">
-                  <?php $mainImg = $p['image_url'] ?? ($photos[0]['url'] ?? ''); ?>
+                  <?php $mainImg = $p['image_url'] ? productImageUrl($p['image_url']) : ($photos[0]['url'] ?? ''); ?>
                   <?php if ($mainImg): ?>
                     <img src="<?= e($mainImg) ?>" style="width:100%;height:100%;object-fit:cover" id="mainImgTag">
                   <?php else: ?>

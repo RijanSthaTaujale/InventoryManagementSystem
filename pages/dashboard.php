@@ -197,7 +197,7 @@ include __DIR__ . '/../components/head.php';
                onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--border)'">
               <div style="width:52px;height:52px;background:var(--bg);border-radius:var(--radius-md);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center">
                 <?php if ($p['image_url']): ?>
-                  <img src="<?= htmlspecialchars($p['image_url']) ?>" alt="" style="width:100%;height:100%;object-fit:cover">
+                  <img src="<?= e(productImageUrl($p['image_url'])) ?>" alt="" style="width:100%;height:100%;object-fit:cover">
                 <?php else: ?>
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                 <?php endif; ?>

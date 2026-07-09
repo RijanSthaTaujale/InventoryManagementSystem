@@ -2,9 +2,25 @@
 // pages/products/import.php  — admin only
 require_once __DIR__ . '/../../config/app.php';
 require_once __DIR__ . '/../../config/auth_guard.php';
+require_once __DIR__ . '/../../config/uploads.php';
+
+$importStagingDir = __DIR__ . '/../../assets/uploads/products/_import_staging/' . session_id();
+
+// Removes any staged (not-yet-confirmed) bulk-import images for this session
+function clearImportStaging(string $dir): void {
+    if (!is_dir($dir)) return;
+    foreach (glob($dir . '/*') as $f) { @unlink($f); }
+    @rmdir($dir);
+}
 
 $user = currentUser();
 if ($user['role'] !== 'admin') redirect('/pages/dashboard.php');
+
+if (($_GET['action'] ?? '') === 'reupload') {
+    clearImportStaging($importStagingDir);
+    unset($_SESSION['import_rows'], $_SESSION['import_images']);
+    redirect('/pages/products/import.php');
+}
 
 $activePage = 'product';
 $pageTitle  = 'Import Products';
@@ -49,6 +65,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 if (empty($csvRows)) {
                     $error = 'The CSV file has no data rows.';
                 } else {
+                    // Stage any bulk-uploaded images, keyed by their (sanitized) original
+                    // filename, so the confirm step can match them to CSV rows via image_filename.
+                    clearImportStaging($importStagingDir);
+                    $stagedImages = [];
+                    if (!empty($_FILES['images']['tmp_name'])) {
+                        $count = count($_FILES['images']['tmp_name']);
+                        for ($i = 0; $i < $count; $i++) {
+                            $f = [
+                                'name'     => $_FILES['images']['name'][$i],
+                                'type'     => $_FILES['images']['type'][$i],
+                                'tmp_name' => $_FILES['images']['tmp_name'][$i],
+                                'error'    => $_FILES['images']['error'][$i],
+                                'size'     => $_FILES['images']['size'][$i],
+                            ];
+                            if (($f['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) continue;
+                            $check = validateImageUpload($f);
+                            if (!$check['ok']) continue;
+                            if (!is_dir($importStagingDir)) mkdir($importStagingDir, 0755, true);
+                            $safeName = sanitizeFilename($f['name']);
+                            if (move_uploaded_file($f['tmp_name'], $importStagingDir . '/' . $safeName)) {
+                                $stagedImages[$safeName] = true;
+                            }
+                        }
+                    }
+                    $_SESSION['import_images'] = $stagedImages;
+
                     // Store in session for confirm step
                     $_SESSION['import_rows'] = $csvRows;
                     $preview = $csvRows;
@@ -60,7 +102,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 // ── Handle confirm import ─────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'import') {
-    $rows    = $_SESSION['import_rows'] ?? [];
+    $rows         = $_SESSION['import_rows'] ?? [];
+    $stagedImages = $_SESSION['import_images'] ?? [];
+    $permDir      = __DIR__ . '/../../assets/uploads/products';
     $ok      = 0;
     $skipped = 0;
 
@@ -78,6 +122,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $min_stock  = (int)($row['min_stock_level']    ?? 5) ?: 5;
         $image_url  = trim($row['image_url']           ?? '') ?: null;
         $desc       = trim($row['description']         ?? '') ?: null;
+
+        // Bulk-uploaded image takes priority over an external image_url
+        $imgFilename = sanitizeFilename(trim($row['image_filename'] ?? ''));
+        if ($imgFilename !== '' && isset($stagedImages[$imgFilename])) {
+            $stagedPath = $importStagingDir . '/' . $imgFilename;
+            $ext        = strtolower(pathinfo($imgFilename, PATHINFO_EXTENSION));
+            $finalName  = 'img_' . bin2hex(random_bytes(8)) . '.' . $ext;
+            if (is_dir($permDir) || mkdir($permDir, 0755, true)) {
+                if (rename($stagedPath, $permDir . '/' . $finalName)) {
+                    $image_url = '/assets/uploads/products/' . $finalName;
+                }
+            }
+        }
 
         // Category lookup
         $cat_id = null;
@@ -133,7 +190,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $ok++;
     }
 
-    unset($_SESSION['import_rows']);
+    clearImportStaging($importStagingDir);
+    unset($_SESSION['import_rows'], $_SESSION['import_images']);
     $success = "$ok product" . ($ok != 1 ? 's' : '') . " imported successfully." . ($skipped ? " $skipped row(s) skipped (missing name/price or duplicate SKU)." : '');
     $preview = [];
 }
@@ -206,6 +264,13 @@ include __DIR__ . '/../../components/head.php';
                 <div style="font-size:.8rem;color:var(--text-muted)" id="fileLabel">Supports .csv files only</div>
               </div>
               <input type="file" id="csvInput" name="csv_file" accept=".csv" style="display:none" onchange="showFileName(this)">
+
+              <div style="margin-top:16px" class="form-group">
+                <label class="form-label">Product Images (optional)</label>
+                <input type="file" name="images[]" accept=".jpg,.jpeg,.png,.gif,.webp" multiple class="form-control">
+                <div class="form-hint">Select all product image files here, then put each file's exact name in the <code>image_filename</code> CSV column to link it to that row.</div>
+              </div>
+
               <div style="margin-top:14px;display:flex;justify-content:flex-end">
                 <button type="submit" class="btn btn-primary" id="previewBtn" disabled>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -224,7 +289,7 @@ include __DIR__ . '/../../components/head.php';
                 <div class="card-title">Preview — <?= count($preview) ?> row<?= count($preview)!=1?'s':'' ?></div>
                 <div style="font-size:.82rem;color:var(--text-secondary);margin-top:2px">Review before confirming. Rows with missing name or sell price will be skipped.</div>
               </div>
-              <a href="<?= APP_URL ?>/pages/products/import.php" class="btn btn-outline btn-sm" onclick="<?php unset($_SESSION['import_rows']); ?>">← Re-upload</a>
+              <a href="<?= APP_URL ?>/pages/products/import.php?action=reupload" class="btn btn-outline btn-sm">← Re-upload</a>
             </div>
 
             <div style="overflow-x:auto">
@@ -276,7 +341,7 @@ include __DIR__ . '/../../components/head.php';
 
             <form method="POST" style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px">
               <input type="hidden" name="action" value="import">
-              <a href="<?= APP_URL ?>/pages/products/import.php" class="btn btn-outline btn-sm">Cancel</a>
+              <a href="<?= APP_URL ?>/pages/products/import.php?action=reupload" class="btn btn-outline btn-sm">Cancel</a>
               <button type="submit" class="btn btn-primary">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
                 Confirm & Import <?= count($preview) ?> Product<?= count($preview)!=1?'s':'' ?>
@@ -314,7 +379,8 @@ include __DIR__ . '/../../components/head.php';
                 ['brand',           'text',   false, 'Brand name'],
                 ['sku',             'text',   false, 'Unique SKU code'],
                 ['description',     'text',   false, 'Product description'],
-                ['image_url',       'url',    false, 'Main image URL'],
+                ['image_filename',  'text',   false, 'Exact filename of an image uploaded in the box above (e.g. headphones.jpg)'],
+                ['image_url',       'url',    false, 'External image URL — used only if image_filename is empty'],
                 ['location',        'text',   false, 'Warehouse location (e.g. Shelf A1)'],
                 ['min_stock_level', 'number', false, 'Low stock alert threshold (default 5)'],
               ];
@@ -373,8 +439,8 @@ function handleDrop(e) {
 }
 
 function downloadTemplate() {
-  const headers = ['name','sell_price','buy_price','quantity','category','brand','sku','description','image_url','location','min_stock_level'];
-  const example = ['Wireless Headphones','3500','1800','10','Electronics','Sony','SON-001','Premium wireless headphones','https://example.com/img.jpg','Shelf A1','5'];
+  const headers = ['name','sell_price','buy_price','quantity','category','brand','sku','description','image_filename','image_url','location','min_stock_level'];
+  const example = ['Wireless Headphones','3500','1800','10','Electronics','Sony','SON-001','Premium wireless headphones','headphones.jpg','','Shelf A1','5'];
   const csv = [headers.join(','), example.join(',')].join('\n');
   const blob = new Blob([csv], {type:'text/csv'});
   const a = document.createElement('a');

@@ -177,7 +177,7 @@ include __DIR__ . '/../../components/head.php';
                       <div style="display:flex;align-items:center;gap:10px">
                         <div style="width:36px;height:36px;background:var(--bg);border-radius:var(--radius-sm);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center">
                           <?php if ($item['image_url']): ?>
-                            <img src="<?= e($item['image_url']) ?>" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'">
+                            <img src="<?= e(productImageUrl($item['image_url'])) ?>" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'">
                           <?php else: ?>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
                           <?php endif; ?>

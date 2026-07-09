@@ -42,6 +42,15 @@ function e(string $str): string {
     return htmlspecialchars($str, ENT_QUOTES, 'UTF-8');
 }
 
+// Resolves a product image_url for display: external URLs pass through
+// unchanged, local upload paths (e.g. /assets/uploads/products/x.jpg) get
+// APP_URL prefixed.
+function productImageUrl(?string $path): string {
+    if (!$path) return '';
+    if (preg_match('#^https?://#i', $path)) return $path;
+    return APP_URL . $path;
+}
+
 // Read a key/value row from the settings table (cached per-request)
 function getSetting(string $key, string $default = ''): string {
     static $cache = [];

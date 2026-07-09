@@ -329,7 +329,7 @@ include __DIR__ . '/../../components/head.php';
                   <div style="display:flex;align-items:center;gap:10px">
                     <div style="width:34px;height:34px;background:var(--bg);border-radius:var(--radius-sm);overflow:hidden;flex-shrink:0">
                       <?php if ($p['image_url']): ?>
-                        <img src="<?= e($p['image_url']) ?>" style="width:100%;height:100%;object-fit:cover">
+                        <img src="<?= e(productImageUrl($p['image_url'])) ?>" style="width:100%;height:100%;object-fit:cover">
                       <?php else: ?>
                         <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-muted)">
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
