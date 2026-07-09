@@ -159,6 +159,22 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
+// ── QUICK SEARCH (topbar global search) ───────────────────────
+if ($action === 'search' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+    $q    = trim($_GET['q'] ?? '');
+    $like = "%$q%";
+    $stmt = $pdo->prepare("
+        SELECT order_id, customer_name, customer_phone, status, total
+        FROM orders WHERE order_id LIKE ? OR customer_name LIKE ? OR customer_phone LIKE ?
+        ORDER BY created_at DESC LIMIT 8
+    ");
+    $stmt->execute([$like, $like, $like]);
+    $orders = $stmt->fetchAll();
+    if (!$isAdmin) { foreach ($orders as &$o) unset($o['total']); }
+    echo json_encode(['success' => true, 'orders' => $orders]);
+    exit;
+}
+
 // ── CHECK DUPLICATE (same phone, same day) ───────────────────
 if ($action === 'check_duplicate' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     $phone          = trim($_GET['phone'] ?? '');

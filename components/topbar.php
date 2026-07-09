@@ -16,11 +16,14 @@ try {
 <header class="topbar" id="topbar">
 
   <!-- Search -->
-  <div class="topbar-search">
+  <div class="topbar-search" style="position:relative">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
       <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
     </svg>
-    <input type="text" placeholder="Search anything..." id="globalSearch" autocomplete="off"/>
+    <input type="text" placeholder="Search anything..." id="globalSearch" autocomplete="off">
+
+    <!-- Search results dropdown -->
+    <div id="globalSearchDropdown" style="display:none;position:absolute;top:calc(100% + 6px);left:0;width:360px;max-height:400px;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);z-index:600"></div>
   </div>
 
   <!-- Actions -->
@@ -155,9 +158,11 @@ document.addEventListener('click', () => {
   const d = document.getElementById('notifDropdown');
   const a = document.getElementById('avatarDropdown');
   const c = document.getElementById('chatPanel');
+  const g = document.getElementById('globalSearchDropdown');
   if (d) d.style.display = 'none';
   if (a) a.style.display = 'none';
   if (c) c.style.display = 'none';
+  if (g) g.style.display = 'none';
 });
 
 // ── Chat assistant ───────────────────────────────────────────
@@ -208,5 +213,61 @@ async function sendChatMessage() {
     btn.disabled = false;
     document.getElementById('chatMessages').scrollTop = document.getElementById('chatMessages').scrollHeight;
   }
+}
+
+// ── Global search ────────────────────────────────────────────
+const gSearchInput    = document.getElementById('globalSearch');
+const gSearchDropdown = document.getElementById('globalSearchDropdown');
+let gSearchTimer;
+
+gSearchInput?.addEventListener('input', () => {
+  clearTimeout(gSearchTimer);
+  const q = gSearchInput.value.trim();
+  if (q.length < 2) { gSearchDropdown.style.display = 'none'; return; }
+  gSearchTimer = setTimeout(() => runGlobalSearch(q), 280);
+});
+gSearchInput?.addEventListener('focus', () => {
+  if (gSearchInput.value.trim().length >= 2) gSearchDropdown.style.display = 'block';
+});
+gSearchDropdown?.addEventListener('click', e => e.stopPropagation());
+
+async function runGlobalSearch(q) {
+  gSearchDropdown.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:.83rem">Searching...</div>';
+  gSearchDropdown.style.display = 'block';
+
+  const [prodRes, orderRes] = await Promise.all([
+    fetch(`${CHAT_APP_URL}/api/products.php?action=search&q=${encodeURIComponent(q)}`).then(r => r.json()).catch(() => ({products: []})),
+    fetch(`${CHAT_APP_URL}/api/orders.php?action=search&q=${encodeURIComponent(q)}`).then(r => r.json()).catch(() => ({orders: []})),
+  ]);
+  const products = (prodRes.products || []).slice(0, 5);
+  const orders   = (orderRes.orders   || []).slice(0, 5);
+
+  if (!products.length && !orders.length) {
+    gSearchDropdown.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:.83rem">No results found</div>';
+    return;
+  }
+
+  let html = '';
+  if (products.length) {
+    html += '<div style="padding:8px 14px 4px;font-size:.7rem;font-weight:700;letter-spacing:.05em;color:var(--text-muted);text-transform:uppercase">Products</div>';
+    html += products.map(p => `
+      <a href="${CHAT_APP_URL}/pages/products/view.php?id=${p.id}" style="display:flex;align-items:center;gap:10px;padding:8px 14px;text-decoration:none;color:var(--text);border-bottom:1px solid var(--border)">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.84rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.name}</div>
+          <div style="font-size:.72rem;color:var(--text-muted)">${p.product_id} · Stock: ${p.quantity}</div>
+        </div>
+      </a>`).join('');
+  }
+  if (orders.length) {
+    html += '<div style="padding:8px 14px 4px;font-size:.7rem;font-weight:700;letter-spacing:.05em;color:var(--text-muted);text-transform:uppercase">Orders</div>';
+    html += orders.map(o => `
+      <a href="${CHAT_APP_URL}/pages/orders/view.php?id=${encodeURIComponent(o.order_id)}" style="display:flex;align-items:center;gap:10px;padding:8px 14px;text-decoration:none;color:var(--text);border-bottom:1px solid var(--border)">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.84rem;font-weight:600">${o.order_id}</div>
+          <div style="font-size:.72rem;color:var(--text-muted)">${o.customer_name} · ${o.status.replace('_',' ')}</div>
+        </div>
+      </a>`).join('');
+  }
+  gSearchDropdown.innerHTML = html;
 }
 </script>
