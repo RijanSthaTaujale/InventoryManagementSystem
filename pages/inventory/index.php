@@ -196,7 +196,7 @@ include __DIR__ . '/../../components/head.php';
                   <th>Category</th>
                   <th>Stock Qty</th>
                   <th>Min Level</th>
-                  <th>Buy Price</th>
+                  <?php if ($isAdmin): ?><th>Buy Price</th><?php endif; ?>
                   <th>Sell Price</th>
                   <th>Status</th>
                   <th>Last Adjusted</th>
@@ -228,7 +228,7 @@ include __DIR__ . '/../../components/head.php';
                     </div>
                   </td>
                   <td class="text-muted"><?= $p['min_stock_level'] ?></td>
-                  <td><?= $currency ?> <?= number_format($p['buy_price'],0) ?></td>
+                  <?php if ($isAdmin): ?><td><?= $currency ?> <?= number_format($p['buy_price'],0) ?></td><?php endif; ?>
                   <td style="font-weight:600"><?= $currency ?> <?= number_format($p['sell_price'],0) ?></td>
                   <td><span class="badge <?= $badge ?>"><?= $label ?></span></td>
                   <td style="font-size:.76rem;color:var(--text-muted)">

@@ -42,8 +42,6 @@ $stmt->execute([$dFrom,$dTo]); $totalOrders = (int)$stmt->fetchColumn();
 $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE created_at BETWEEN ? AND ? AND status NOT IN ('cancelled','returned')");
 $stmt->execute([$dFrom,$dTo]); $completedOrders = (int)$stmt->fetchColumn();
 
-$fulfillRate = $totalOrders > 0 ? round(($completedOrders/$totalOrders)*100,1) : 0;
-
 // Revenue (admin only)
 $totalRevenue = $todayRevenue = $avgOrder = 0;
 if ($isAdmin) {
@@ -95,19 +93,6 @@ $byStatus = $pdo->prepare("
 ");
 $byStatus->execute([$dFrom,$dTo]);
 $byStatus = $byStatus->fetchAll(PDO::FETCH_KEY_PAIR);
-
-// ── Sales by category ─────────────────────────────────────────
-$byCat = $pdo->prepare("
-    SELECT c.name AS category, SUM(oi.qty) AS qty, SUM(oi.total) AS revenue
-    FROM order_items oi
-    JOIN orders o ON o.id=oi.order_id
-    JOIN products p ON p.id=oi.product_id
-    LEFT JOIN categories c ON c.id=p.category_id
-    WHERE o.created_at BETWEEN ? AND ? AND o.status NOT IN ('cancelled','returned')
-    GROUP BY p.category_id ORDER BY revenue DESC LIMIT 6
-");
-$byCat->execute([$dFrom,$dTo]);
-$byCat = $byCat->fetchAll();
 
 // Chart data JSON
 $chartLabels  = array_column($salesByDay, 'day');
@@ -177,16 +162,6 @@ include __DIR__ . '/../../components/head.php';
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/></svg>
           </div>
         </div>
-        <div class="stat-card">
-          <div>
-            <div class="stat-label">Fulfillment Rate</div>
-            <div class="stat-value"><?= $fulfillRate ?>%</div>
-            <div class="stat-sub">Orders fulfilled</div>
-          </div>
-          <div class="stat-icon <?= $fulfillRate>=80?'green':($fulfillRate>=60?'orange':'red') ?>">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-          </div>
-        </div>
         <?php if ($isAdmin): ?>
         <div class="stat-card">
           <div>
@@ -254,43 +229,6 @@ include __DIR__ . '/../../components/head.php';
 
       </div>
 
-      <div class="grid-2" style="gap:16px;margin-bottom:16px">
-
-        <!-- Sales by category -->
-        <div class="card">
-          <div class="card-header">
-            <div class="card-title">Regional Sales Destination</div>
-            <div class="card-sub">By category</div>
-          </div>
-          <?php if (empty($byCat)): ?>
-          <div style="text-align:center;padding:30px;color:var(--text-muted);font-size:.85rem">No data</div>
-          <?php else:
-            $maxCatRev = max(array_column($byCat,'revenue')) ?: 1;
-            foreach ($byCat as $cat):
-              $pct = round(($cat['revenue']/$maxCatRev)*100);
-          ?>
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-            <div style="width:110px;font-size:.78rem;font-weight:600;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><?= e($cat['category']??'Uncategorized') ?></div>
-            <div style="flex:1;height:8px;background:var(--bg);border-radius:9999px;overflow:hidden">
-              <div style="width:<?= $pct ?>%;height:100%;background:var(--primary);border-radius:9999px"></div>
-            </div>
-            <div style="font-size:.76rem;font-weight:600;white-space:nowrap"><?= $cat['qty'] ?> sold</div>
-            <?php if ($isAdmin): ?>
-            <div style="font-size:.74rem;color:var(--text-muted);white-space:nowrap;width:80px;text-align:right"><?= $currency ?> <?= number_format($cat['revenue'],0) ?></div>
-            <?php endif; ?>
-          </div>
-          <?php endforeach; endif; ?>
-        </div>
-
-        <!-- Product performance -->
-        <div class="card">
-          <div class="card-header">
-            <div class="card-title">Product Performance</div>
-            <div class="card-sub">Top selling items</div>
-          </div>
-        </div>
-
-      </div>
 
       <!-- Product Performance Table -->
       <div class="card">

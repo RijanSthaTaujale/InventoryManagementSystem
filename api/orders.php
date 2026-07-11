@@ -489,25 +489,35 @@ if ($action === 'export_csv' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     $dateTo   = $_GET['date_to']       ?? '';
     $courier  = trim($_GET['courier']  ?? '');
 
-    $validStatuses = ['new','confirmed','pending','cancelled','dispatched','delivered','returned','in_courier'];
+    $validStatuses = ['new','confirmed','pending','cancelled','dispatched','in_courier','delivered','returned'];
     $where  = ['1=1'];
     $params = [];
 
     if ($search) {
-        $where[] = "(order_id LIKE ? OR customer_name LIKE ? OR customer_phone LIKE ?)";
+        $where[] = "(o.order_id LIKE ? OR o.customer_name LIKE ? OR o.customer_phone LIKE ?)";
         $like    = "%$search%";
         $params  = array_merge($params, [$like, $like, $like]);
     }
-    if ($status && in_array($status, $validStatuses)) { $where[] = "status = ?"; $params[] = $status; }
-    if ($dateFrom) { $where[] = "DATE(created_at) >= ?"; $params[] = $dateFrom; }
-    if ($dateTo)   { $where[] = "DATE(created_at) <= ?"; $params[] = $dateTo; }
-    if ($courier)  { $where[] = "courier_name = ?"; $params[] = $courier; }
+    if ($status && in_array($status, $validStatuses)) { $where[] = "o.status = ?"; $params[] = $status; }
+    if ($dateFrom) { $where[] = "DATE(o.created_at) >= ?"; $params[] = $dateFrom; }
+    if ($dateTo)   { $where[] = "DATE(o.created_at) <= ?"; $params[] = $dateTo; }
+    if ($courier)  { $where[] = "o.courier_name = ?"; $params[] = $courier; }
 
     $whereSQL = 'WHERE ' . implode(' AND ', $where);
 
+    // One row per order — multi-item orders get their product names/quantities
+    // joined together (same item order for both, so they line up positionally).
     $stmt = $pdo->prepare("
-        SELECT order_id, customer_name, customer_phone, status, payment_status, courier_name, courier_charge, total, created_at
-        FROM orders $whereSQL ORDER BY created_at DESC
+        SELECT o.order_id, o.customer_name, o.customer_phone, o.courier_name, o.customer_address,
+               o.total, o.remarks, fp.name AS page_name,
+               GROUP_CONCAT(oi.product_name ORDER BY oi.id SEPARATOR '; ') AS product_names,
+               GROUP_CONCAT(oi.qty ORDER BY oi.id SEPARATOR '; ') AS quantities
+        FROM orders o
+        LEFT JOIN order_items oi ON oi.order_id = o.id
+        LEFT JOIN fb_pages fp ON fp.id = o.fb_page_id
+        $whereSQL
+        GROUP BY o.id
+        ORDER BY o.created_at DESC
     ");
     $stmt->execute($params);
     $rows = $stmt->fetchAll();
@@ -516,19 +526,21 @@ if ($action === 'export_csv' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     header('Content-Disposition: attachment; filename="orders_export_' . date('Ymd_His') . '.csv"');
 
     $out = fopen('php://output', 'w');
-    $headerRow = ['Order ID', 'Customer', 'Phone', 'Status', 'Payment Status', 'Courier'];
-    if ($isAdmin) { $headerRow[] = 'Courier Charge'; $headerRow[] = 'Total'; }
-    $headerRow[] = 'Date';
-    fputcsv($out, $headerRow);
+    fputcsv($out, ['Order ID', 'Name', 'Phone Number', 'Courier', 'Address', 'Price', 'Quantity', 'Product Name', 'Page', 'Remarks']);
 
     foreach ($rows as $r) {
-        $line = [
-            $r['order_id'], $r['customer_name'], $r['customer_phone'],
-            ucfirst(str_replace('_', ' ', $r['status'])), ucfirst($r['payment_status']), $r['courier_name'] ?? '',
-        ];
-        if ($isAdmin) { $line[] = $r['courier_charge']; $line[] = $r['total']; }
-        $line[] = $r['created_at'];
-        fputcsv($out, $line);
+        fputcsv($out, [
+            $r['order_id'],
+            $r['customer_name'],
+            $r['customer_phone'],
+            $r['courier_name'] ?? '',
+            $r['customer_address'] ?? '',
+            $r['total'],
+            $r['quantities'] ?? '',
+            $r['product_names'] ?? '',
+            $r['page_name'] ?? '',
+            $r['remarks'] ?? '',
+        ]);
     }
     fclose($out);
     exit;

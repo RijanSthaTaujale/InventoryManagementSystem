@@ -135,10 +135,6 @@ include __DIR__ . '/../../components/head.php';
                 </div>
               </div>
               <div class="form-group">
-                <label class="form-label">Email</label>
-                <input type="email" id="custEmail" class="form-control" placeholder="customer@example.com">
-              </div>
-              <div class="form-group">
                 <label class="form-label">Delivery Address</label>
                 <textarea id="custAddress" class="form-control" rows="2" placeholder="Street, City, District"></textarea>
               </div>
@@ -178,15 +174,9 @@ include __DIR__ . '/../../components/head.php';
                   </select>
                 </div>
               </div>
-              <div class="grid-2" style="gap:12px">
-                <div class="form-group">
-                  <label class="form-label">Courier Name</label>
-                  <input type="text" id="courierName" class="form-control" placeholder="e.g. Pathao, NCM">
-                </div>
-                <div class="form-group">
-                  <label class="form-label">Courier Charge (Rs)</label>
-                  <input type="number" id="courierCharge" class="form-control" min="0" step="0.01" value="0">
-                </div>
+              <div class="form-group">
+                <label class="form-label">Courier Name</label>
+                <input type="text" id="courierName" class="form-control" placeholder="e.g. Pathao, NCM">
               </div>
             </div>
           </div>
@@ -284,13 +274,11 @@ const EDIT_ORDER = <?= json_encode([
     'order_id'        => $order['order_id'],
     'customer_name'   => $order['customer_name'],
     'customer_phone'  => $order['customer_phone'],
-    'customer_email'  => $order['customer_email'],
     'customer_address'=> $order['customer_address'],
     'fb_page_id'      => $order['fb_page_id'],
     'shipping_method' => $order['shipping_method'],
     'payment_method'  => $order['payment_method'],
     'courier_name'    => $order['courier_name'],
-    'courier_charge'  => $order['courier_charge'],
     'discount'        => $order['discount'],
     'discount_type'   => $order['discount_type'],
     'remarks'         => $order['remarks'],
@@ -462,14 +450,12 @@ async function submitOrder() {
   const payload = {
     customer_name:    custName,
     customer_phone:   custPhone,
-    customer_email:   document.getElementById('custEmail').value.trim(),
     customer_address: custAddress,
     fb_page_id:       document.getElementById('fbPage').value || null,
     payment_method:   document.getElementById('paymentMethod').value,
     shipping_method:  sel.value,
     shipping_cost:    shipping,
     courier_name:     document.getElementById('courierName').value.trim(),
-    courier_charge:   parseFloat(document.getElementById('courierCharge').value) || 0,
     discount:         discount,
     discount_type:    discType,
     subtotal,
@@ -508,13 +494,11 @@ async function submitOrder() {
 if (IS_EDIT) {
   document.getElementById('custName').value    = EDIT_ORDER.customer_name || '';
   document.getElementById('custPhone').value   = EDIT_ORDER.customer_phone || '';
-  document.getElementById('custEmail').value   = EDIT_ORDER.customer_email || '';
   document.getElementById('custAddress').value = EDIT_ORDER.customer_address || '';
   if (EDIT_ORDER.fb_page_id) document.getElementById('fbPage').value = EDIT_ORDER.fb_page_id;
   if (EDIT_ORDER.shipping_method) document.getElementById('shippingMethod').value = EDIT_ORDER.shipping_method;
   if (EDIT_ORDER.payment_method) document.getElementById('paymentMethod').value = EDIT_ORDER.payment_method;
   document.getElementById('courierName').value   = EDIT_ORDER.courier_name || '';
-  document.getElementById('courierCharge').value = EDIT_ORDER.courier_charge || 0;
   document.getElementById('remarks').value       = EDIT_ORDER.remarks || '';
 
   const discAmt = parseFloat(EDIT_ORDER.discount) || 0;

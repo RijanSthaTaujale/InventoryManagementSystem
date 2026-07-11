@@ -19,7 +19,7 @@ $courier    = trim($_GET['courier'] ?? '');
 $page       = max(1, (int)($_GET['page'] ?? 1));
 $perPage    = 15;
 
-$validStatuses = ['new','confirmed','pending','cancelled','dispatched','delivered','returned','in_courier'];
+$validStatuses = ['new','confirmed','pending','cancelled','dispatched','in_courier','delivered','returned'];
 
 $where  = ['1=1'];
 $params = [];
@@ -51,11 +51,14 @@ $offset     = ($page - 1) * $perPage;
 $stmt = $pdo->prepare("
     SELECT o.*, COUNT(oi.id) AS item_count,
            u.name AS assigned_name,
-           uc.name AS created_by_name
+           uc.name AS created_by_name,
+           GROUP_CONCAT(DISTINCT oi.product_name SEPARATOR ', ') AS product_names,
+           fp.name AS page_name
     FROM orders o
     LEFT JOIN order_items oi ON oi.order_id = o.id
     LEFT JOIN users u  ON u.id  = o.assigned_to
     LEFT JOIN users uc ON uc.id = o.created_by
+    LEFT JOIN fb_pages fp ON fp.id = o.fb_page_id
     $whereSQL
     GROUP BY o.id
     ORDER BY o.created_at DESC
@@ -262,11 +265,10 @@ include __DIR__ . '/../../components/head.php';
             <tr>
               <th>Order ID</th>
               <th>Customer</th>
-              <th>Items</th>
+              <th>Product</th>
               <?php if ($isAdmin): ?><th>Total</th><?php endif; ?>
               <th>Status</th>
-              <th>Payment</th>
-              <th>Created By</th>
+              <th>Page</th>
               <th>Date</th>
               <th>Actions</th>
             </tr>
@@ -274,7 +276,6 @@ include __DIR__ . '/../../components/head.php';
           <tbody>
             <?php foreach ($orders as $o):
               $badge = $badgeMap[$o['status']] ?? 'badge-pending';
-              $payBadge = $o['payment_status']==='paid' ? 'badge-confirmed' : ($o['payment_status']==='partial'?'badge-pending':'badge-cancelled');
 
               // Build this row's dropdown options: role-allowed statuses + current status (so it's always selectable/visible)
               $rowOptions = $allowedStatusOptions;
@@ -303,7 +304,7 @@ include __DIR__ . '/../../components/head.php';
                 <div style="font-size:.68rem;font-weight:700;color:#92400e;margin-top:2px">⚠ Duplicate today</div>
                 <?php endif; ?>
               </td>
-              <td class="text-muted"><?= $o['item_count'] ?> item<?= $o['item_count']!=1?'s':'' ?></td>
+              <td class="text-muted" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="<?= e($o['product_names'] ?? '') ?>"><?= e($o['product_names'] ?? '—') ?></td>
               <?php if ($isAdmin): ?>
               <td style="font-weight:600"><?= $currency ?> <?= number_format($o['total'],0) ?></td>
               <?php endif; ?>
@@ -318,8 +319,7 @@ include __DIR__ . '/../../components/head.php';
                   <?php endforeach; ?>
                 </select>
               </td>
-              <td><span class="badge <?= $payBadge ?>"><?= ucfirst($o['payment_status']) ?></span></td>
-              <td style="font-size:.8rem;color:var(--text-secondary)"><?= e($o['created_by_name'] ?? '—') ?></td>
+              <td class="text-muted"><?= e($o['page_name'] ?? '—') ?></td>
               <td>
                 <div style="font-size:.8rem"><?= date('d M Y', strtotime($o['created_at'])) ?></div>
                 <div style="font-size:.72rem;color:var(--text-muted)"><?= date('h:i A', strtotime($o['created_at'])) ?></div>
