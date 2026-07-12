@@ -92,6 +92,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $image_url = '/assets/uploads/products/' . $saved;
             }
+        } elseif (($d['remove_image'] ?? '0') === '1') {
+            if ($isEdit && $image_url && str_starts_with($image_url, '/assets/uploads/products/')) {
+                @unlink(__DIR__ . '/../../' . ltrim($image_url, '/'));
+            }
+            $image_url = null;
         }
 
         $fields = [
@@ -144,14 +149,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        // Photos (simple URL list)
-        if (!empty($d['photo_urls'])) {
-            if ($isEdit) $pdo->prepare("DELETE FROM product_photos WHERE product_id=?")->execute([$savedId]);
-            $urls = array_filter(array_map('trim', explode("\n", $d['photo_urls'])));
-            foreach ($urls as $i => $url) {
-                $pdo->prepare("INSERT INTO product_photos (product_id,url,sort_order,is_primary) VALUES (?,?,?,?)")
-                    ->execute([$savedId, $url, $i, $i===0?1:0]);
-            }
+        // Photos (simple URL list) — on edit, always resync to what's in the
+        // textarea, including clearing all existing photos when left empty.
+        if ($isEdit) $pdo->prepare("DELETE FROM product_photos WHERE product_id=?")->execute([$savedId]);
+        $urls = array_filter(array_map('trim', explode("\n", $d['photo_urls'] ?? '')));
+        foreach ($urls as $i => $url) {
+            $pdo->prepare("INSERT INTO product_photos (product_id,url,sort_order,is_primary) VALUES (?,?,?,?)")
+                ->execute([$savedId, $url, $i, $i===0?1:0]);
         }
 
         // Variants
@@ -273,9 +277,13 @@ include __DIR__ . '/../../components/head.php';
                     <div style="flex:1">
                       <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('imageInput').click()">
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:4px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                        <?= !empty($product['image_url']) ? 'Replace Image' : 'Upload Image' ?>
+                        <span id="imageBtnLabel"><?= !empty($product['image_url']) ? 'Replace Image' : 'Upload Image' ?></span>
                       </button>
+                      <?php if (!empty($product['image_url'])): ?>
+                      <button type="button" class="btn btn-outline btn-sm" id="removeImageBtn" onclick="removeImage()" style="color:#ef4444;border-color:#fecaca">Remove Image</button>
+                      <?php endif; ?>
                       <input type="file" name="image_file" id="imageInput" accept=".jpg,.jpeg,.png,.gif,.webp" style="display:none" onchange="previewImage(this)">
+                      <input type="hidden" name="remove_image" id="removeImageFlag" value="0">
                       <div class="form-hint" id="imageFileName">JPG, PNG, GIF, or WEBP — up to 5MB<?= !empty($product['image_url']) ? '. Leave blank to keep the current image.' : '' ?></div>
                     </div>
                   </div>
@@ -435,6 +443,7 @@ include __DIR__ . '/../../components/head.php';
 function previewImage(input) {
   const file = input.files[0];
   if (!file) return;
+  document.getElementById('removeImageFlag').value = '0';
   document.getElementById('imageFileName').textContent = file.name;
   const reader = new FileReader();
   reader.onload = e => {
@@ -442,6 +451,15 @@ function previewImage(input) {
     document.getElementById('imagePreviewWrap').style.display = '';
   };
   reader.readAsDataURL(file);
+}
+
+function removeImage() {
+  document.getElementById('removeImageFlag').value = '1';
+  document.getElementById('imageInput').value = '';
+  document.getElementById('imagePreviewWrap').style.display = 'none';
+  document.getElementById('imageBtnLabel').textContent = 'Upload Image';
+  document.getElementById('imageFileName').textContent = 'JPG, PNG, GIF, or WEBP — up to 5MB. Image will be removed on save.';
+  document.getElementById('removeImageBtn').style.display = 'none';
 }
 
 function addVariant() {
