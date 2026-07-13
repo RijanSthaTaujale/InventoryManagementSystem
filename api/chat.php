@@ -18,7 +18,6 @@ if (!$message) {
 $payload = json_encode([
     'chatInput' => $message,
     'sessionId' => $session ?: ('user-' . ($user['id'] ?? 'guest')),
-    'userId'    => $user['id'] ?? null,
     'userName'  => $user['name'] ?? null,
 ]);
 
