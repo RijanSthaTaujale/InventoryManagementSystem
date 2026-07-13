@@ -35,8 +35,8 @@ try {
       </svg>
     </button>
 
-    <!-- Chat panel (hidden by default) -->
-    <div id="chatPanel" style="display:none;position:absolute;top:50px;right:110px;width:340px;height:440px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);z-index:500;overflow:hidden;flex-direction:column">
+    <!-- Chat panel (hidden by default) — floats fixed to the bottom-right of the viewport -->
+    <div id="chatPanel" style="display:none;position:fixed;bottom:24px;right:24px;width:360px;height:480px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);z-index:8000;overflow:hidden;flex-direction:column">
       <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
         <span style="font-weight:700;font-size:.9rem">Chat Assistant</span>
         <button onclick="document.getElementById('chatPanel').style.display='none'" style="background:none;border:none;cursor:pointer;color:var(--text-muted);display:flex">
@@ -44,13 +44,28 @@ try {
         </button>
       </div>
       <div id="chatMessages" style="flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px">
-        <div style="align-self:flex-start;max-width:85%;background:var(--bg);padding:8px 12px;border-radius:var(--radius-md);font-size:.84rem;color:var(--text-secondary)">Hi! How can I help you?</div>
+        <div class="chat-bubble chat-bubble-bot">Hi! How can I help you?</div>
       </div>
       <div style="padding:10px;border-top:1px solid var(--border);display:flex;gap:8px;flex-shrink:0">
         <input type="text" id="chatInput" class="form-control" placeholder="Type a message..." style="font-size:.84rem" onkeydown="if(event.key==='Enter')sendChatMessage()">
         <button onclick="sendChatMessage()" class="btn btn-primary btn-sm" id="chatSendBtn">Send</button>
       </div>
     </div>
+
+    <style>
+      .chat-bubble { max-width: 85%; padding: 8px 12px; border-radius: var(--radius-md); font-size: .84rem; overflow-wrap: break-word; word-break: break-word; line-height: 1.45; }
+      .chat-bubble-user { align-self: flex-end; background: var(--primary); color: #fff; }
+      .chat-bubble-bot { align-self: flex-start; background: var(--bg); color: var(--text-secondary); }
+      .chat-bubble p { margin: 4px 0; }
+      .chat-bubble p:first-child { margin-top: 0; }
+      .chat-bubble p:last-child { margin-bottom: 0; }
+      .chat-bubble ul { margin: 4px 0; padding-left: 18px; }
+      .chat-bubble li { margin: 2px 0; }
+      .chat-bubble strong { font-weight: 700; }
+      @media (max-width: 480px) {
+        #chatPanel { width: calc(100vw - 24px) !important; right: 12px !important; bottom: 12px !important; height: 70vh !important; }
+      }
+    </style>
 
     <!-- Notifications -->
     <button class="topbar-icon-btn" title="Notifications" id="notifBtn">
@@ -180,13 +195,38 @@ function chatSessionId() {
 function appendChatMessage(text, from) {
   const wrap = document.getElementById('chatMessages');
   const bubble = document.createElement('div');
-  const isUser = from === 'user';
-  bubble.style.cssText = `align-self:${isUser ? 'flex-end' : 'flex-start'};max-width:85%;padding:8px 12px;border-radius:var(--radius-md);font-size:.84rem;white-space:pre-wrap;` +
-    (isUser ? 'background:var(--primary);color:#fff' : 'background:var(--bg);color:var(--text-secondary)');
+  bubble.className = 'chat-bubble ' + (from === 'user' ? 'chat-bubble-user' : 'chat-bubble-bot');
   bubble.textContent = text;
   wrap.appendChild(bubble);
   wrap.scrollTop = wrap.scrollHeight;
   return bubble;
+}
+
+// Minimal, safe markdown-ish renderer for bot replies: escapes HTML first
+// (so no injected markup can execute), then adds back **bold**, bullet
+// lists, and paragraph breaks as real elements so long structured answers
+// (like AI-generated product detail lists) render legibly instead of
+// showing raw asterisks.
+function renderChatMarkdown(text) {
+  const escaped = document.createElement('div');
+  escaped.textContent = text;
+  const lines = escaped.innerHTML.split('\n');
+
+  let html = '';
+  let inList = false;
+  for (const line of lines) {
+    const listMatch = line.match(/^\s*[*-]\s+(.*)/);
+    if (listMatch) {
+      if (!inList) { html += '<ul>'; inList = true; }
+      html += `<li>${listMatch[1]}</li>`;
+      continue;
+    }
+    if (inList) { html += '</ul>'; inList = false; }
+    if (line.trim() !== '') html += `<p>${line}</p>`;
+  }
+  if (inList) html += '</ul>';
+
+  return html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
 }
 
 async function sendChatMessage() {
@@ -206,7 +246,11 @@ async function sendChatMessage() {
       body: JSON.stringify({ message: msg, session_id: chatSessionId() })
     });
     const d = await r.json();
-    thinking.textContent = d.success ? d.reply : (d.message || 'Something went wrong.');
+    if (d.success) {
+      thinking.innerHTML = renderChatMarkdown(d.reply);
+    } else {
+      thinking.textContent = d.message || 'Something went wrong.';
+    }
   } catch (e) {
     thinking.textContent = 'Network error. Please try again.';
   } finally {
