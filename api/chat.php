@@ -4,7 +4,7 @@ require_once __DIR__ . '/../config/app.php';
 require_once __DIR__ . '/../config/auth_guard.php';
 header('Content-Type: application/json');
 
-define('N8N_CHAT_WEBHOOK_URL', 'https://n8n.rijanshresthataujale.com.np/webhook/employee-training');
+define('N8N_CHAT_WEBHOOK_URL', 'https://n8n.rijanshresthataujale.com.np/webhook/inventorywebsite');
 
 $user    = currentUser();
 $body    = json_decode(file_get_contents('php://input'), true);
