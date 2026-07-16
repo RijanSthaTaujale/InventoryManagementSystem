@@ -61,3 +61,29 @@ function getSetting(string $key, string $default = ''): string {
     $val = $stmt->fetchColumn();
     return $cache[$key] = ($val !== false ? $val : $default);
 }
+
+// Next unused PRD-#### code, based on the highest existing numeric suffix
+// (not insertion order) so it stays correct even if the newest row was deleted.
+function nextProductId(PDO $pdo): string {
+    $max = (int)$pdo->query("SELECT MAX(CAST(SUBSTRING(product_id,5) AS UNSIGNED)) FROM products WHERE product_id LIKE 'PRD-%'")->fetchColumn();
+    return 'PRD-' . str_pad($max + 1, 4, '0', STR_PAD_LEFT);
+}
+
+// products.product_id is UNIQUE at the DB level; under concurrent creates two
+// requests can generate the same next code before either commits. Retries
+// with a freshly-generated code on a duplicate-key error instead of crashing.
+function insertProductWithUniqueId(PDO $pdo, string $sql, array $namedFields, int $maxAttempts = 5): array {
+    for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+        $productId = nextProductId($pdo);
+        $fields = array_merge($namedFields, ['product_id' => $productId]);
+        try {
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute(array_values($fields));
+            return ['id' => $pdo->lastInsertId(), 'product_id' => $productId];
+        } catch (PDOException $e) {
+            $isDuplicateProductId = $e->getCode() === '23000' && str_contains($e->getMessage(), "'product_id'");
+            if (!$isDuplicateProductId || $attempt === $maxAttempts - 1) throw $e;
+        }
+    }
+    throw new RuntimeException('Could not generate a unique product ID.');
+}

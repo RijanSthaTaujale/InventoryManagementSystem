@@ -10,6 +10,20 @@ $isAdmin = $user['role'] === 'admin';
 $isSuper = $user['role'] === 'supervisor';
 $isStaff = $user['role'] === 'staff';
 
+// ── CHECK BLACKLIST ──────────────────────────────────────────
+if ($action === 'check_blacklist') {
+    $phone = trim($_GET['phone'] ?? '');
+    $result = ['success' => true, 'blacklisted' => false, 'reason' => null];
+    if (preg_match('/^\d{10}$/', $phone)) {
+        $stmt = $pdo->prepare("SELECT reason FROM customer_blacklist WHERE phone=?");
+        $stmt->execute([$phone]);
+        $row = $stmt->fetch();
+        if ($row) { $result['blacklisted'] = true; $result['reason'] = $row['reason']; }
+    }
+    echo json_encode($result);
+    exit;
+}
+
 // Applies qty_change (direction * item qty) to every product in an order's
 // line items, recalculates stock_status, and logs one stock_adjustments row
 // per item. direction: -1 to deduct (dispatch), +1 to restore (return).

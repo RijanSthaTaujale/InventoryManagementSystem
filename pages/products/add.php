@@ -56,15 +56,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     elseif (!$sell_price) { $error = 'Sell price is required.'; }
     elseif ($imageError)  { $error = $imageError; }
     else {
-        // Auto product_id
-        if (!$isEdit) {
-            $last = $pdo->query("SELECT product_id FROM products ORDER BY id DESC LIMIT 1")->fetchColumn();
-            $num  = $last ? (int)substr($last, 4) + 1 : 1;
-            $product_id = 'PRD-' . str_pad($num, 4, '0', STR_PAD_LEFT);
-        } else {
-            $product_id = $product['product_id'];
-        }
-
         // Slug
         $slug = strtolower(trim(preg_replace('/[^A-Za-z0-9-]+/', '-', $name), '-'));
         if ($isEdit && $product['slug'] !== $slug) {
@@ -134,13 +125,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ->execute([$savedId,'adjustment',$product['quantity'],$quantity-$product['quantity'],$quantity,'Manual edit',$user['id']]);
             }
         } else {
-            $fields['product_id'] = $product_id;
             $fields['created_by'] = $user['id'];
-            $cols = implode(',', array_keys($fields));
-            $vals = implode(',', array_fill(0, count($fields), '?'));
-            $stmt = $pdo->prepare("INSERT INTO products ($cols) VALUES ($vals)");
-            $stmt->execute(array_values($fields));
-            $savedId = $pdo->lastInsertId();
+            $cols = implode(',', array_merge(array_keys($fields), ['product_id']));
+            $vals = implode(',', array_fill(0, count($fields) + 1, '?'));
+            $inserted = insertProductWithUniqueId($pdo, "INSERT INTO products ($cols) VALUES ($vals)", $fields);
+            $savedId    = $inserted['id'];
+            $product_id = $inserted['product_id'];
 
             // Initial stock adjustment
             if ($quantity > 0) {

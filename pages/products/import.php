@@ -145,11 +145,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
         }
 
-        // Auto product_id
-        $last       = $pdo->query("SELECT product_id FROM products ORDER BY id DESC LIMIT 1")->fetchColumn();
-        $num        = $last ? (int)substr($last, 4) + 1 : 1;
-        $product_id = 'PRD-' . str_pad($num, 4, '0', STR_PAD_LEFT);
-
         // Slug
         $slug = strtolower(trim(preg_replace('/[^A-Za-z0-9-]+/', '-', $name), '-'));
         $exists = $pdo->prepare("SELECT id FROM products WHERE slug=?");
@@ -167,19 +162,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             : ($quantity <= 2 ? 'critical'
             : ($quantity <= $min_stock ? 'lowstock' : 'instock'));
 
-        $stmt = $pdo->prepare("
+        $inserted = insertProductWithUniqueId($pdo, "
             INSERT INTO products
-                (product_id, name, slug, category_id, brand, sku, description,
+                (name, slug, category_id, brand, sku, description,
                  buy_price, sell_price, image_url, quantity, min_stock_level,
-                 location, stock_status, status, created_by)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?)
-        ");
-        $stmt->execute([
-            $product_id, $name, $slug, $cat_id, $brand, $sku, $desc,
-            $buy_price, $sell_price, $image_url, $quantity, $min_stock,
-            $location, $stock_status, $user['id']
+                 location, stock_status, status, created_by, product_id)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)
+        ", [
+            'name' => $name, 'slug' => $slug, 'category_id' => $cat_id, 'brand' => $brand,
+            'sku' => $sku, 'description' => $desc, 'buy_price' => $buy_price, 'sell_price' => $sell_price,
+            'image_url' => $image_url, 'quantity' => $quantity, 'min_stock_level' => $min_stock,
+            'location' => $location, 'stock_status' => $stock_status, 'created_by' => $user['id'],
         ]);
-        $newId = $pdo->lastInsertId();
+        $newId = $inserted['id'];
 
         // Log initial stock
         if ($quantity > 0) {

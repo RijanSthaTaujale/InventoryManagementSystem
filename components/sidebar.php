@@ -115,6 +115,15 @@ $userInitial = strtoupper(substr($userName, 0, 1));
       Categories
     </a>
 
+    <!-- Blacklist -->
+    <a href="<?= APP_URL ?>/pages/admin/blacklist.php"
+       class="nav-item <?= $activePage === 'blacklist' ? 'active' : '' ?>">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+      </svg>
+      Blacklist
+    </a>
+
     <?php endif; ?>
 
     <?php if ($role === 'admin' || $role === 'supervisor'): ?>

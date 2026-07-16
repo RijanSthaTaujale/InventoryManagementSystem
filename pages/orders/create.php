@@ -131,7 +131,8 @@ include __DIR__ . '/../../components/head.php';
                 </div>
                 <div class="form-group">
                   <label class="form-label">Phone Number *</label>
-                  <input type="text" id="custPhone" class="form-control" placeholder="98XXXXXXXX" maxlength="10" inputmode="numeric" onblur="checkDuplicatePhone()">
+                  <input type="text" id="custPhone" class="form-control" placeholder="98XXXXXXXX" maxlength="10" inputmode="numeric" onblur="checkDuplicatePhone(); checkBlacklist()">
+                  <div id="blacklistWarning" style="display:none;margin-top:6px;padding:8px 10px;background:#fef2f2;border:1px solid #fecaca;border-radius:var(--radius-sm);color:#b91c1c;font-size:.78rem;font-weight:600"></div>
                   <div id="duplicateWarning" style="display:none;margin-top:6px;padding:8px 10px;background:#fefce8;border:1px solid #fde68a;border-radius:var(--radius-sm);color:#92400e;font-size:.78rem"></div>
                 </div>
               </div>
@@ -450,6 +451,28 @@ function recalc() {
   document.getElementById('sumTotal').textContent     = `${CURRENCY} ${total.toLocaleString()}`;
 }
 
+// ── Blacklist check ──────────────────────────────────────────
+let phoneBlacklisted = false;
+let blacklistReason   = '';
+
+async function checkBlacklist() {
+  const warnDiv = document.getElementById('blacklistWarning');
+  warnDiv.style.display = 'none';
+  phoneBlacklisted = false;
+  blacklistReason  = '';
+  const phone = document.getElementById('custPhone').value.trim();
+  if (!/^\d{10}$/.test(phone)) return;
+
+  const r = await fetch(`${APP_URL}/api/orders.php?action=check_blacklist&phone=${encodeURIComponent(phone)}`);
+  const d = await r.json();
+  if (d.success && d.blacklisted) {
+    phoneBlacklisted = true;
+    blacklistReason  = d.reason || '';
+    warnDiv.textContent = `⚠ This customer is blacklisted${d.reason ? ' — ' + d.reason : ''}.`;
+    warnDiv.style.display = 'block';
+  }
+}
+
 // ── Duplicate phone check ───────────────────────────────────
 async function checkDuplicatePhone() {
   const warnDiv = document.getElementById('duplicateWarning');
@@ -520,6 +543,15 @@ async function submitOrder() {
   if (!custName)              { errDiv.textContent='Customer name is required.'; errDiv.style.display='block'; return; }
   if (!/^\d{10}$/.test(custPhone)) { errDiv.textContent='Phone number must be exactly 10 digits.'; errDiv.style.display='block'; return; }
   if (!items.length)          { errDiv.textContent='Add at least one product.'; errDiv.style.display='block'; return; }
+
+  // Re-check the blacklist right here (not just relying on the onblur check) so
+  // the warning always fires at the moment of placing the order.
+  const blCheck = await fetch(`${APP_URL}/api/orders.php?action=check_blacklist&phone=${encodeURIComponent(custPhone)}`);
+  const blData  = await blCheck.json();
+  if (blData.success && blData.blacklisted) {
+    const proceed = confirm(`This customer's phone number is blacklisted${blData.reason ? ' — ' + blData.reason : ''}.\n\nPlace the order anyway?`);
+    if (!proceed) return;
+  }
 
   const discAmt  = parseFloat(document.getElementById('discountAmt').value) || 0;
   const discType = document.getElementById('discountType').value;
