@@ -69,6 +69,16 @@ $salesByDay = $pdo->prepare("
 $salesByDay->execute([$dFrom,$dTo]);
 $salesByDay = $salesByDay->fetchAll();
 
+// ── Dispatched by day (reference line for chart) ───────────────
+$dispatchedByDay = $pdo->prepare("
+    SELECT DATE(dispatched_at) AS day, COUNT(*) AS dispatched
+    FROM orders
+    WHERE dispatched_at IS NOT NULL AND dispatched_at BETWEEN ? AND ?
+    GROUP BY DATE(dispatched_at)
+");
+$dispatchedByDay->execute([$dFrom,$dTo]);
+$dispatchedByDay = $dispatchedByDay->fetchAll(PDO::FETCH_KEY_PAIR);
+
 // ── Top products ──────────────────────────────────────────────
 $topProducts = $pdo->prepare("
     SELECT p.name, p.product_id, p.image_url, p.sell_price, p.buy_price,
@@ -98,6 +108,7 @@ $byStatus = $byStatus->fetchAll(PDO::FETCH_KEY_PAIR);
 $chartLabels  = array_column($salesByDay, 'day');
 $chartOrders  = array_column($salesByDay, 'orders');
 $chartRevenue = array_column($salesByDay, 'revenue');
+$chartDispatched = array_map(fn($d) => (int)($dispatchedByDay[$d] ?? 0), $chartLabels);
 
 include __DIR__ . '/../../components/head.php';
 ?>
@@ -313,6 +324,7 @@ include __DIR__ . '/../../components/head.php';
 const ctx    = document.getElementById('salesChart').getContext('2d');
 const labels = <?= json_encode($chartLabels) ?>;
 const orders = <?= json_encode($chartOrders) ?>;
+const dispatched = <?= json_encode($chartDispatched) ?>;
 <?php if ($isAdmin): ?>
 const revenue = <?= json_encode($chartRevenue) ?>;
 <?php endif; ?>
@@ -343,6 +355,18 @@ new Chart(ctx, {
         backgroundColor: 'rgba(59,91,219,.7)',
         borderRadius: 4,
         yAxisID: 'y',
+      },
+      {
+        label: 'Dispatched',
+        data: dispatched,
+        type: 'line',
+        borderColor: '#20c997',
+        borderDash: [6, 4],
+        borderWidth: 2,
+        yAxisID: 'y',
+        tension: 0.3,
+        fill: false,
+        pointRadius: 3,
       }
     ]
   },

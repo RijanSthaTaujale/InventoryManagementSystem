@@ -14,12 +14,27 @@ $isStaff = $user['role'] === 'staff';
 // line items, recalculates stock_status, and logs one stock_adjustments row
 // per item. direction: -1 to deduct (dispatch), +1 to restore (return).
 function adjustOrderStock(PDO $pdo, int $orderDbId, string $adjType, int $direction, int $userId, string $reason): void {
-    $items = $pdo->prepare("SELECT product_id, qty FROM order_items WHERE order_id=? AND product_id IS NOT NULL");
+    $items = $pdo->prepare("SELECT product_id, variant_id, qty FROM order_items WHERE order_id=? AND product_id IS NOT NULL");
     $items->execute([$orderDbId]);
 
     foreach ($items->fetchAll() as $item) {
         $productId = (int)$item['product_id'];
+        $variantId = $item['variant_id'] !== null ? (int)$item['variant_id'] : null;
         $qtyChange = $direction * (int)$item['qty'];
+
+        // If the line item is tied to a specific variant, deduct/restore that
+        // variant's own stock first, then re-derive the product total as the
+        // sum of all its variants (keeps products.quantity accurate for the
+        // existing low-stock/inventory logic that reads it directly).
+        if ($variantId) {
+            $vRow = $pdo->prepare("SELECT qty_adj FROM product_variants WHERE id=? AND product_id=?");
+            $vRow->execute([$variantId, $productId]);
+            $variant = $vRow->fetch();
+            if ($variant) {
+                $vQtyAfter = (int)$variant['qty_adj'] + $qtyChange;
+                $pdo->prepare("UPDATE product_variants SET qty_adj=? WHERE id=?")->execute([$vQtyAfter, $variantId]);
+            }
+        }
 
         $row = $pdo->prepare("SELECT quantity, min_stock_level FROM products WHERE id=?");
         $row->execute([$productId]);
@@ -27,10 +42,18 @@ function adjustOrderStock(PDO $pdo, int $orderDbId, string $adjType, int $direct
         if (!$product) continue;
 
         $qtyBefore = (int)$product['quantity'];
-        // No floor at 0 — dispatching more than what's in stock is allowed and
-        // pushes quantity negative (backorder) rather than being blocked.
-        $qtyAfter  = $qtyBefore + $qtyChange;
         $min       = (int)$product['min_stock_level'];
+
+        if ($variantId) {
+            // Product total is the sum of all its variants' stock.
+            $sumStmt = $pdo->prepare("SELECT COALESCE(SUM(qty_adj),0) FROM product_variants WHERE product_id=?");
+            $sumStmt->execute([$productId]);
+            $qtyAfter = (int)$sumStmt->fetchColumn();
+        } else {
+            // No floor at 0 — dispatching more than what's in stock is allowed and
+            // pushes quantity negative (backorder) rather than being blocked.
+            $qtyAfter = $qtyBefore + $qtyChange;
+        }
         $stockStatus = $qtyAfter <= 0 ? 'outofstock' : ($qtyAfter <= 2 ? 'critical' : ($qtyAfter <= $min ? 'lowstock' : 'instock'));
 
         $pdo->prepare("UPDATE products SET quantity=?, stock_status=? WHERE id=?")
@@ -92,9 +115,17 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $line_total   = $sell_price * $qty;
         $subtotal    += $line_total;
 
+        $variant_id = (int)($item['variant_id'] ?? 0) ?: null;
+        if ($variant_id) {
+            $vCheck = $pdo->prepare("SELECT id FROM product_variants WHERE id=? AND product_id=?");
+            $vCheck->execute([$variant_id, $product_id]);
+            if (!$vCheck->fetch()) $variant_id = null;
+        }
+
         $lineItems[] = [
             'product_id'   => $product_id,
             'product_name' => $product['name'],
+            'variant_id'   => $variant_id,
             'qty'          => $qty,
             'sell_price'   => $sell_price,
             'buy_price'    => $buy_price,
@@ -138,10 +169,10 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         foreach ($lineItems as $li) {
             $pdo->prepare("
                 INSERT INTO order_items
-                    (order_id, product_id, product_name, variant_info, qty, sell_price, buy_price, total)
-                VALUES (?,?,?,?,?,?,?,?)
+                    (order_id, product_id, product_name, variant_id, variant_info, qty, sell_price, buy_price, total)
+                VALUES (?,?,?,?,?,?,?,?,?)
             ")->execute([
-                $dbOrderId, $li['product_id'], $li['product_name'], $li['variant_info'],
+                $dbOrderId, $li['product_id'], $li['product_name'], $li['variant_id'], $li['variant_info'],
                 $li['qty'], $li['sell_price'], $li['buy_price'], $li['total'],
             ]);
         }
@@ -262,9 +293,17 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $line_total   = $sell_price * $qty;
         $subtotal    += $line_total;
 
+        $variant_id = (int)($item['variant_id'] ?? 0) ?: null;
+        if ($variant_id) {
+            $vCheck = $pdo->prepare("SELECT id FROM product_variants WHERE id=? AND product_id=?");
+            $vCheck->execute([$variant_id, $product_id]);
+            if (!$vCheck->fetch()) $variant_id = null;
+        }
+
         $lineItems[] = [
             'product_id'   => $product_id,
             'product_name' => $product['name'],
+            'variant_id'   => $variant_id,
             'qty'          => $qty,
             'sell_price'   => $sell_price,
             'buy_price'    => $buy_price,
@@ -302,10 +341,10 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         foreach ($lineItems as $li) {
             $pdo->prepare("
                 INSERT INTO order_items
-                    (order_id, product_id, product_name, variant_info, qty, sell_price, buy_price, total)
-                VALUES (?,?,?,?,?,?,?,?)
+                    (order_id, product_id, product_name, variant_id, variant_info, qty, sell_price, buy_price, total)
+                VALUES (?,?,?,?,?,?,?,?,?)
             ")->execute([
-                $existing['id'], $li['product_id'], $li['product_name'], $li['variant_info'],
+                $existing['id'], $li['product_id'], $li['product_name'], $li['variant_id'], $li['variant_info'],
                 $li['qty'], $li['sell_price'], $li['buy_price'], $li['total'],
             ]);
         }

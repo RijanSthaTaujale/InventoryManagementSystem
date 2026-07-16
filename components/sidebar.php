@@ -115,6 +115,9 @@ $userInitial = strtoupper(substr($userName, 0, 1));
       Categories
     </a>
 
+    <?php endif; ?>
+
+    <?php if ($role === 'admin' || $role === 'supervisor'): ?>
     <!-- Damaged Stock -->
     <a href="<?= APP_URL ?>/pages/inventory/damaged.php"
        class="nav-item <?= $activePage === 'damaged' ? 'active' : '' ?>">

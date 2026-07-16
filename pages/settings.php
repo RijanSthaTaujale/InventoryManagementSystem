@@ -234,7 +234,7 @@ include __DIR__ . '/../components/head.php';
         $bizPan     = getSetting('business_pan', '126106185');
         $bizAddress = getSetting('business_address', 'Kalanki, Kathmandu');
         $bizPhone   = getSetting('business_phone', '9802377999');
-        $bizEmail   = getSetting('business_email', 'sochejastai@gmail.com');
+        $bizEmail   = getSetting('business_email', 'Pompoynepal@gmail.com');
         $bizLogo    = getSetting('business_logo', '/assets/images/business-logo.png');
       ?>
       <!-- ── Business / Bill Info ── -->

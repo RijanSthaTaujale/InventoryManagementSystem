@@ -63,6 +63,18 @@ $stmt = $pdo->prepare("
 $stmt->execute($params);
 $products = $stmt->fetchAll();
 
+// Variant stock breakdown for products on this page
+$variantsByProduct = [];
+if ($products) {
+    $ids = array_column($products, 'id');
+    $ph  = implode(',', array_fill(0, count($ids), '?'));
+    $vStmt = $pdo->prepare("SELECT product_id, label, value, qty_adj FROM product_variants WHERE product_id IN ($ph) ORDER BY id");
+    $vStmt->execute($ids);
+    foreach ($vStmt->fetchAll() as $v) {
+        $variantsByProduct[$v['product_id']][] = $v;
+    }
+}
+
 // Recent adjustments (admin sidebar)
 $recentAdj = [];
 if ($isAdmin) {
@@ -215,6 +227,18 @@ include __DIR__ . '/../../components/head.php';
                   <td>
                     <div style="font-weight:600;font-size:.85rem"><?= e($p['name']) ?></div>
                     <div style="font-size:.74rem;color:var(--text-muted)"><?= e($p['product_id']) ?></div>
+                    <?php if (!empty($variantsByProduct[$p['id']])): ?>
+                    <details style="margin-top:2px">
+                      <summary style="font-size:.72rem;color:var(--primary);cursor:pointer"><?= count($variantsByProduct[$p['id']]) ?> variant(s)</summary>
+                      <div style="margin-top:4px;display:flex;flex-direction:column;gap:2px">
+                        <?php foreach ($variantsByProduct[$p['id']] as $v):
+                          $vColor = $v['qty_adj'] <= 0 ? '#ef4444' : 'var(--text-secondary)';
+                        ?>
+                        <div style="font-size:.72rem;color:<?= $vColor ?>"><?= e($v['label']) ?>: <?= e($v['value']) ?> — <?= (int)$v['qty_adj'] ?> units</div>
+                        <?php endforeach; ?>
+                      </div>
+                    </details>
+                    <?php endif; ?>
                   </td>
                   <td class="text-muted"><?= e($p['category_name']??'—') ?></td>
                   <td>
@@ -408,5 +432,23 @@ async function submitAdj() {
   if (d.success) { showToast('Stock adjusted successfully','success'); setTimeout(()=>location.reload(),700); }
   else showToast(d.message||'Failed','error');
 }
+
+<?php if ($isAdmin && !empty($_GET['adjust'])):
+    $adjustId = (int)$_GET['adjust'];
+    $adjustProduct = null;
+    foreach ($products as $pr) {
+        if ((int)$pr['id'] === $adjustId) { $adjustProduct = $pr; break; }
+    }
+    if (!$adjustProduct) {
+        $adjStmt = $pdo->prepare("SELECT id, name, quantity FROM products WHERE id = ?");
+        $adjStmt->execute([$adjustId]);
+        $adjustProduct = $adjStmt->fetch();
+    }
+    if ($adjustProduct):
+?>
+document.addEventListener('DOMContentLoaded', function () {
+  openAdjModal(<?= (int)$adjustProduct['id'] ?>, <?= json_encode($adjustProduct['name']) ?>, <?= (int)$adjustProduct['quantity'] ?>);
+});
+<?php endif; endif; ?>
 </script>
 <?php include __DIR__ . '/../../components/foot.php'; ?>

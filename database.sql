@@ -159,6 +159,15 @@ CREATE TABLE IF NOT EXISTS `fb_pages` (
   FOREIGN KEY (`created_by`) REFERENCES `users`(`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `couriers` (
+  `id`         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `name`       VARCHAR(150)  NOT NULL,
+  `status`     ENUM('active','inactive') NOT NULL DEFAULT 'active',
+  `created_by` INT UNSIGNED  DEFAULT NULL,
+  `created_at` DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`created_by`) REFERENCES `users`(`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `customer_blacklist` (
   `id`             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   `phone`          VARCHAR(20)   NOT NULL,
@@ -223,6 +232,7 @@ CREATE TABLE IF NOT EXISTS `order_items` (
   `order_id`    INT UNSIGNED   NOT NULL,
   `product_id`  INT UNSIGNED   DEFAULT NULL,
   `product_name` VARCHAR(200)  NOT NULL COMMENT 'Snapshot',
+  `variant_id`  INT UNSIGNED  DEFAULT NULL,
   `variant_info` VARCHAR(200)  DEFAULT NULL COMMENT 'e.g. Color:Red, Size:XL',
   `qty`         INT            NOT NULL DEFAULT 1,
   `buy_price`   DECIMAL(12,2)  NOT NULL DEFAULT 0 COMMENT 'Snapshot cost price',
@@ -230,6 +240,7 @@ CREATE TABLE IF NOT EXISTS `order_items` (
   `total`       DECIMAL(12,2)  NOT NULL DEFAULT 0,
   FOREIGN KEY (`order_id`)   REFERENCES `orders`(`id`)   ON DELETE CASCADE,
   FOREIGN KEY (`product_id`) REFERENCES `products`(`id`) ON DELETE SET NULL,
+  FOREIGN KEY (`variant_id`) REFERENCES `product_variants`(`id`) ON DELETE SET NULL,
   INDEX `idx_order`   (`order_id`),
   INDEX `idx_product` (`product_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

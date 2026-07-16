@@ -17,6 +17,12 @@ $totalOrders = (int)$pdo->query("SELECT COUNT(*) FROM orders")->fetchColumn();
 // New orders (today)
 $newOrdersToday = (int)$pdo->query("SELECT COUNT(*) FROM orders WHERE DATE(created_at)=CURDATE()")->fetchColumn();
 
+// Dispatched today (count + revenue)
+$dispatchedTodayStmt = $pdo->query("SELECT COUNT(*) AS cnt, COALESCE(SUM(total),0) AS revenue FROM orders WHERE DATE(dispatched_at)=CURDATE()");
+$dispatchedTodayRow = $dispatchedTodayStmt->fetch(PDO::FETCH_ASSOC);
+$dispatchedTodayCount   = (int)($dispatchedTodayRow['cnt'] ?? 0);
+$dispatchedTodayRevenue = (float)($dispatchedTodayRow['revenue'] ?? 0);
+
 // Pending orders
 $pendingOrders = (int)$pdo->query("SELECT COUNT(*) FROM orders WHERE status IN ('new','pending')")->fetchColumn();
 
@@ -39,7 +45,8 @@ $perfFrom = $_GET['perf_from'] ?? date('Y-m-d', strtotime('-6 days'));
 $perfTo   = $_GET['perf_to']   ?? date('Y-m-d');
 
 $perfStmt = $pdo->prepare("
-  SELECT p.id, p.name, p.product_id, COALESCE(SUM(oi.qty),0) AS units_sold
+  SELECT p.id, p.name, p.product_id,
+         COALESCE(SUM(CASE WHEN o.id IS NOT NULL THEN oi.qty ELSE 0 END),0) AS units_sold
   FROM products p
   LEFT JOIN order_items oi ON oi.product_id = p.id
   LEFT JOIN orders o ON o.id = oi.order_id AND DATE(o.created_at) BETWEEN ? AND ? AND o.status <> 'cancelled'
@@ -53,7 +60,7 @@ $productPerformance = $perfStmt->fetchAll(PDO::FETCH_ASSOC);
 
 // ── Low Stock Table ──────────────────────────────────────────
 $lowStockStmt = $pdo->query("
-  SELECT p.product_id, p.name, p.quantity, p.min_stock_level, p.sell_price, p.stock_status, c.name AS category
+  SELECT p.id, p.product_id, p.name, p.quantity, p.min_stock_level, p.sell_price, p.stock_status, c.name AS category
   FROM products p
   LEFT JOIN categories c ON c.id = p.category_id
   WHERE p.stock_status IN ('lowstock','critical','outofstock') AND p.status='active'
@@ -90,7 +97,7 @@ include __DIR__ . '/../components/head.php';
       </div>
 
       <!-- ── Stat Cards ── -->
-      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:20px">
 
         <!-- Total Revenue (admin only) -->
         <?php if ($isAdmin): ?>
@@ -127,6 +134,18 @@ include __DIR__ . '/../components/head.php';
           </div>
           <div class="stat-icon blue">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          </div>
+        </div>
+
+        <!-- Dispatched Today -->
+        <div class="stat-card">
+          <div>
+            <div class="stat-label">Dispatched Today</div>
+            <div class="stat-value"><?= number_format($dispatchedTodayCount) ?></div>
+            <div class="stat-sub"><?= $currency ?> <?= number_format($dispatchedTodayRevenue, 2) ?> revenue</div>
+          </div>
+          <div class="stat-icon green">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3H4a2 2 0 0 0-2 2v14l4-4h12a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z"/><path d="m9 12 2 2 4-4"/></svg>
           </div>
         </div>
 
@@ -260,7 +279,7 @@ include __DIR__ . '/../components/head.php';
                   <span class="badge <?= $badgeClass ?>"><?= $label ?></span>
                 </td>
                 <td>
-                  <a href="<?= APP_URL ?>/pages/inventory/index.php?search=<?= urlencode($item['product_id']) ?>" class="btn btn-outline btn-xs">Restock</a>
+                  <a href="<?= APP_URL ?>/pages/inventory/index.php?adjust=<?= $item['id'] ?>" class="btn btn-outline btn-xs">Restock</a>
                 </td>
               </tr>
               <?php endforeach; ?>

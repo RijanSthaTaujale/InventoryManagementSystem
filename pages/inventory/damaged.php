@@ -4,7 +4,7 @@ require_once __DIR__ . '/../../config/app.php';
 require_once __DIR__ . '/../../config/auth_guard.php';
 
 $user = currentUser();
-if ($user['role'] !== 'admin') redirect('/pages/dashboard.php');
+if (!in_array($user['role'], ['admin', 'supervisor'], true)) redirect('/pages/dashboard.php');
 
 $activePage = 'damaged';
 $pageTitle  = 'Damaged Stock';

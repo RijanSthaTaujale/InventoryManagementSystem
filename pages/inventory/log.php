@@ -9,12 +9,13 @@ $user       = currentUser();
 $productId = (int)($_GET['product_id'] ?? 0);
 if (!$productId) redirect('/pages/inventory/index.php');
 
-$stmt = $pdo->prepare("SELECT id, product_id, name, quantity FROM products WHERE id=?");
+$stmt = $pdo->prepare("SELECT id, product_id, name, quantity, min_stock_level FROM products WHERE id=?");
 $stmt->execute([$productId]);
 $product = $stmt->fetch();
 if (!$product) redirect('/pages/inventory/index.php');
 
 $pageTitle = 'Inventory Log — ' . $product['name'];
+$qtyColor = $product['quantity'] <= 0 ? '#ef4444' : ($product['quantity'] <= $product['min_stock_level'] ? '#f97316' : 'var(--text)');
 
 $period = $_GET['period'] ?? 'daily';
 if (!in_array($period, ['daily', 'weekly', 'monthly', 'yearly'])) $period = 'daily';
@@ -68,7 +69,7 @@ include __DIR__ . '/../../components/head.php';
             <span style="font-size:.82rem">Inventory Log</span>
           </div>
           <h1 style="font-size:1.25rem;font-weight:700">Inventory Log</h1>
-          <p style="font-size:.82rem;color:var(--text-secondary);margin-top:2px"><?= e($product['name']) ?> (<?= e($product['product_id']) ?>) · Currently <?= $product['quantity'] ?> units</p>
+          <p style="font-size:.82rem;color:var(--text-secondary);margin-top:2px"><?= e($product['name']) ?> (<?= e($product['product_id']) ?>) · Currently <span style="font-weight:700;font-size:1rem;color:<?= $qtyColor ?>"><?= $product['quantity'] ?> units</span> available</p>
         </div>
         <div style="display:flex;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:4px">
           <?php foreach (['daily'=>'Daily','weekly'=>'Weekly','monthly'=>'Monthly','yearly'=>'Yearly'] as $val => $label): ?>

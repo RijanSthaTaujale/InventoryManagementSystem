@@ -22,7 +22,13 @@ if ($action === 'search') {
     $stmt = $pdo->prepare("SELECT id,product_id,name,sell_price,buy_price,quantity,image_url,stock_status FROM products WHERE status='active' AND (name LIKE ? OR product_id LIKE ? OR sku LIKE ?) LIMIT 20");
     $stmt->execute([$like,$like,$like]);
     $products = $stmt->fetchAll();
-    foreach ($products as &$p) { $p['image_url'] = productImageUrl($p['image_url']); }
+
+    $variantStmt = $pdo->prepare("SELECT id,label,value,price_adj,qty_adj FROM product_variants WHERE product_id=? ORDER BY id");
+    foreach ($products as &$p) {
+        $p['image_url'] = productImageUrl($p['image_url']);
+        $variantStmt->execute([$p['id']]);
+        $p['variants'] = $variantStmt->fetchAll();
+    }
     echo json_encode(['success'=>true,'products'=>$products]);
     exit;
 }

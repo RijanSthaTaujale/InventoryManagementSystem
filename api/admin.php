@@ -102,4 +102,16 @@ if ($action === 'add_fb_page' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
+// ── ADD COURIER ──────────────────────────────────────────────
+if ($action === 'add_courier' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $body = json_decode(file_get_contents('php://input'), true);
+    $name = trim($body['name'] ?? '');
+
+    if (!$name) { echo json_encode(['success'=>false,'message'=>'Courier name is required']); exit; }
+
+    $pdo->prepare("INSERT INTO couriers (name, created_by) VALUES (?,?)")->execute([$name, $currentUser['id']]);
+    echo json_encode(['success'=>true, 'id'=>$pdo->lastInsertId(), 'name'=>$name]);
+    exit;
+}
+
 echo json_encode(['success'=>false,'message'=>'Invalid action']);

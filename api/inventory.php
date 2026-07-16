@@ -7,6 +7,7 @@ header('Content-Type: application/json');
 $action  = $_GET['action'] ?? '';
 $user    = currentUser();
 $isAdmin = $user['role'] === 'admin';
+$isAdminOrSupervisor = in_array($user['role'], ['admin', 'supervisor'], true);
 
 if ($action === 'adjust' && $isAdmin && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $body       = json_decode(file_get_contents('php://input'), true);
@@ -63,7 +64,7 @@ if ($action === 'adjust' && $isAdmin && $_SERVER['REQUEST_METHOD'] === 'POST') {
 // Deducts damaged qty from stock, logs it in both damaged_products
 // (dedicated damage log) and stock_adjustments (type='damaged', for the
 // unified per-product inventory log).
-if ($action === 'log_damage' && $isAdmin && $_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($action === 'log_damage' && $isAdminOrSupervisor && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $body       = json_decode(file_get_contents('php://input'), true);
     $product_id = (int)($body['product_id'] ?? 0);
     $qty        = (int)($body['qty']        ?? 0);

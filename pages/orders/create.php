@@ -41,7 +41,8 @@ if (!$isEditMode) {
     $nextId = 'ORD-' . date('Y') . '-' . str_pad($num, 5, '0', STR_PAD_LEFT);
 }
 
-$fbPages = $pdo->query("SELECT id, name FROM fb_pages WHERE status='active' ORDER BY name")->fetchAll();
+$fbPages  = $pdo->query("SELECT id, name FROM fb_pages WHERE status='active' ORDER BY name")->fetchAll();
+$couriers = $pdo->query("SELECT id, name FROM couriers WHERE status='active' ORDER BY name")->fetchAll();
 
 include __DIR__ . '/../../components/head.php';
 ?>
@@ -176,7 +177,17 @@ include __DIR__ . '/../../components/head.php';
               </div>
               <div class="form-group">
                 <label class="form-label">Courier Name</label>
-                <input type="text" id="courierName" class="form-control" placeholder="e.g. Pathao, NCM">
+                <div style="display:flex;gap:8px;align-items:center">
+                  <select id="courierName" class="form-control">
+                    <option value="">— None —</option>
+                    <?php foreach ($couriers as $c): ?>
+                    <option value="<?= e($c['name']) ?>"><?= e($c['name']) ?></option>
+                    <?php endforeach; ?>
+                  </select>
+                  <?php if ($isAdmin): ?>
+                  <button type="button" class="btn btn-outline btn-sm" style="white-space:nowrap" onclick="document.getElementById('addCourierModal').style.display='flex'">+ Add Courier</button>
+                  <?php endif; ?>
+                </div>
               </div>
             </div>
           </div>
@@ -261,6 +272,21 @@ include __DIR__ . '/../../components/head.php';
     </div>
   </div>
 </div>
+
+<!-- Add Courier modal -->
+<div id="addCourierModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:var(--radius-xl);padding:24px;max-width:340px;width:90%;box-shadow:var(--shadow-md)">
+    <div style="font-size:1rem;font-weight:700;margin-bottom:14px">Add Courier</div>
+    <div class="form-group">
+      <label class="form-label">Courier Name</label>
+      <input type="text" id="newCourierName" class="form-control" placeholder="e.g. Pathao, NCM">
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('addCourierModal').style.display='none'">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="addCourier()">Add</button>
+    </div>
+  </div>
+</div>
 <?php endif; ?>
 
 <div class="toast-container" id="toastContainer"></div>
@@ -289,6 +315,8 @@ const EDIT_ORDER = <?= json_encode([
         'sell_price' => (float)$it['sell_price'],
         'buy_price'  => (float)$it['buy_price'],
         'qty'        => (int)$it['qty'],
+        'variant_id'   => $it['variant_id'] !== null ? (int)$it['variant_id'] : null,
+        'variant_info' => $it['variant_info'],
     ], $orderItems),
 ]) ?>;
 <?php endif; ?>
@@ -307,8 +335,9 @@ searchInput.addEventListener('input', () => {
     const r = await fetch(`${APP_URL}/api/products.php?action=search&q=${encodeURIComponent(q)}`);
     const d = await r.json();
     if (!d.products?.length) { dropdown.innerHTML = '<div style="padding:14px;text-align:center;color:var(--text-muted);font-size:.84rem">No products found</div>'; dropdown.style.display='block'; return; }
-    dropdown.innerHTML = d.products.map(p => `
-      <div onclick="addItem(${JSON.stringify(p).replace(/"/g,'&quot;')})"
+    lastSearchProducts = d.products;
+    dropdown.innerHTML = d.products.map((p, pi) => `
+      <div onclick="pickProduct(${pi})"
            style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border)"
            onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
         <div style="width:36px;height:36px;background:var(--bg);border-radius:var(--radius-sm);flex-shrink:0;overflow:hidden">
@@ -316,7 +345,7 @@ searchInput.addEventListener('input', () => {
         </div>
         <div style="flex:1;min-width:0">
           <div style="font-size:.85rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.name}</div>
-          <div style="font-size:.74rem;color:var(--text-muted)">${p.product_id} &nbsp;·&nbsp; Stock: ${p.quantity} &nbsp;·&nbsp; ${CURRENCY} ${Number(p.sell_price).toLocaleString()}</div>
+          <div style="font-size:.74rem;color:var(--text-muted)">${p.product_id} &nbsp;·&nbsp; Stock: ${p.quantity} &nbsp;·&nbsp; ${CURRENCY} ${Number(p.sell_price).toLocaleString()}${p.variants?.length ? ` &nbsp;·&nbsp; ${p.variants.length} variant(s)` : ''}</div>
         </div>
         ${p.quantity <= 0 ? '<span style="font-size:.7rem;font-weight:700;color:#ef4444">OUT</span>' : ''}
       </div>`).join('');
@@ -326,13 +355,45 @@ searchInput.addEventListener('input', () => {
 
 document.addEventListener('click', e => { if (!searchInput.contains(e.target) && !dropdown.contains(e.target)) dropdown.style.display='none'; });
 
-function addItem(p) {
+let lastSearchProducts = [];
+
+function pickProduct(pi) {
+  const p = lastSearchProducts[pi];
+  if (!p.variants || !p.variants.length) { addItem(p); return; }
+  // Show a variant picker in place of the product list
+  dropdown.innerHTML = `
+    <div onclick="renderSearchResults()" style="padding:9px 14px;cursor:pointer;font-size:.8rem;color:var(--primary);font-weight:600;border-bottom:1px solid var(--border)">&larr; Back to results</div>
+    <div style="padding:8px 14px;font-size:.78rem;color:var(--text-muted)">${p.name} — choose a variant</div>
+  ` + p.variants.map((v, vi) => `
+    <div onclick="addItem(lastSearchProducts[${pi}], lastSearchProducts[${pi}].variants[${vi}])"
+         style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 14px;cursor:pointer;border-bottom:1px solid var(--border)"
+         onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
+      <div style="font-size:.84rem;font-weight:600">${v.label}: ${v.value}</div>
+      <div style="font-size:.74rem;color:${v.qty_adj <= 0 ? '#ef4444' : 'var(--text-muted)'}">${v.qty_adj <= 0 ? 'Out of stock' : `Stock: ${v.qty_adj}`}${parseFloat(v.price_adj) ? ` &nbsp;·&nbsp; ${v.price_adj > 0 ? '+' : ''}${CURRENCY} ${v.price_adj}` : ''}</div>
+    </div>`).join('');
+}
+
+function renderSearchResults() {
+  searchInput.dispatchEvent(new Event('input'));
+}
+
+function addItem(p, variant = null) {
   dropdown.style.display = 'none';
   searchInput.value = '';
-  // Check if already in list
-  const existing = items.find(i => i.id === p.id);
+  const variantId = variant ? variant.id : null;
+  // Check if already in list (same product + same variant)
+  const existing = items.find(i => i.id === p.id && (i.variant_id ?? null) === variantId);
   if (existing) { existing.qty++; renderItems(); recalc(); return; }
-  items.push({ id: p.id, name: p.name, product_id: p.product_id, sell_price: parseFloat(p.sell_price), buy_price: parseFloat(p.buy_price), qty: 1 });
+  items.push({
+    id: p.id,
+    name: p.name,
+    product_id: p.product_id,
+    sell_price: parseFloat(p.sell_price) + (variant ? parseFloat(variant.price_adj || 0) : 0),
+    buy_price: parseFloat(p.buy_price),
+    qty: 1,
+    variant_id: variantId,
+    variant_info: variant ? `${variant.label}: ${variant.value}` : null,
+  });
   renderItems();
   recalc();
 }
@@ -347,7 +408,7 @@ function renderItems() {
     <tr>
       <td>
         <div style="font-weight:600;font-size:.85rem">${item.name}</div>
-        <div style="font-size:.74rem;color:var(--text-muted)">${item.product_id}</div>
+        <div style="font-size:.74rem;color:var(--text-muted)">${item.product_id}${item.variant_info ? ` &nbsp;·&nbsp; ${item.variant_info}` : ''}</div>
       </td>
       <td>
         <input type="number" value="${item.qty}" min="1"
@@ -426,6 +487,27 @@ async function addFbPage() {
   }
 }
 
+// ── Add Courier ──────────────────────────────────────────────
+async function addCourier() {
+  const name = document.getElementById('newCourierName').value.trim();
+  if (!name) return;
+  const r = await fetch(`${APP_URL}/api/admin.php?action=add_courier`, {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name })
+  });
+  const d = await r.json();
+  if (d.success) {
+    const sel = document.getElementById('courierName');
+    const opt = document.createElement('option');
+    opt.value = d.name; opt.textContent = d.name; opt.selected = true;
+    sel.appendChild(opt);
+    document.getElementById('newCourierName').value = '';
+    document.getElementById('addCourierModal').style.display = 'none';
+    showToast('Courier added', 'success');
+  } else {
+    showToast(d.message || 'Failed to add courier', 'error');
+  }
+}
+
 // ── Submit ───────────────────────────────────────────────────
 async function submitOrder() {
   const errDiv = document.getElementById('orderError');
@@ -461,7 +543,7 @@ async function submitOrder() {
     subtotal,
     total,
     remarks:          document.getElementById('remarks').value.trim(),
-    items: items.map(i => ({ product_id: i.id, product_name: i.name, qty: i.qty, sell_price: i.sell_price, buy_price: i.buy_price, total: i.qty * i.sell_price }))
+    items: items.map(i => ({ product_id: i.id, product_name: i.name, qty: i.qty, sell_price: i.sell_price, buy_price: i.buy_price, total: i.qty * i.sell_price, variant_id: i.variant_id ?? null, variant_info: i.variant_info ?? null }))
   };
   if (IS_EDIT) payload.order_id = EDIT_ORDER.order_id;
 
@@ -498,7 +580,15 @@ if (IS_EDIT) {
   if (EDIT_ORDER.fb_page_id) document.getElementById('fbPage').value = EDIT_ORDER.fb_page_id;
   if (EDIT_ORDER.shipping_method) document.getElementById('shippingMethod').value = EDIT_ORDER.shipping_method;
   if (EDIT_ORDER.payment_method) document.getElementById('paymentMethod').value = EDIT_ORDER.payment_method;
-  document.getElementById('courierName').value   = EDIT_ORDER.courier_name || '';
+  if (EDIT_ORDER.courier_name) {
+    const courierSel = document.getElementById('courierName');
+    if (![...courierSel.options].some(o => o.value === EDIT_ORDER.courier_name)) {
+      const opt = document.createElement('option');
+      opt.value = EDIT_ORDER.courier_name; opt.textContent = EDIT_ORDER.courier_name;
+      courierSel.appendChild(opt);
+    }
+    courierSel.value = EDIT_ORDER.courier_name;
+  }
   document.getElementById('remarks').value       = EDIT_ORDER.remarks || '';
 
   const discAmt = parseFloat(EDIT_ORDER.discount) || 0;

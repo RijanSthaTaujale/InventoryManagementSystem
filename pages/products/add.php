@@ -160,15 +160,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Variants
         if ($isEdit) $pdo->prepare("DELETE FROM product_variants WHERE product_id=?")->execute([$savedId]);
+        $variantCount = 0;
         if (!empty($d['var_label'])) {
             foreach ($d['var_label'] as $i => $vLabel) {
                 $vLabel = trim($vLabel);
                 $vValue = trim($d['var_value'][$i] ?? '');
                 if ($vLabel && $vValue) {
-                    $pdo->prepare("INSERT INTO product_variants (product_id,label,value,price_adj) VALUES (?,?,?,?)")
-                        ->execute([$savedId, $vLabel, $vValue, (float)($d['var_price'][$i] ?? 0)]);
+                    $pdo->prepare("INSERT INTO product_variants (product_id,label,value,price_adj,qty_adj) VALUES (?,?,?,?,?)")
+                        ->execute([$savedId, $vLabel, $vValue, (float)($d['var_price'][$i] ?? 0), (int)($d['var_qty'][$i] ?? 0)]);
+                    $variantCount++;
                 }
             }
+        }
+
+        // When a product has variants, products.quantity is the auto-computed
+        // sum of each variant's own stock, not a manually-entered number.
+        if ($variantCount > 0) {
+            $sumStmt = $pdo->prepare("SELECT COALESCE(SUM(qty_adj),0) FROM product_variants WHERE product_id=?");
+            $sumStmt->execute([$savedId]);
+            $variantTotal = (int)$sumStmt->fetchColumn();
+
+            $newStockStatus = $variantTotal <= 0 ? 'outofstock'
+                : ($variantTotal <= 2 ? 'critical'
+                : ($variantTotal <= $min_stock ? 'lowstock' : 'instock'));
+
+            $pdo->prepare("UPDATE products SET quantity=?, stock_status=? WHERE id=?")
+                ->execute([$variantTotal, $newStockStatus, $savedId]);
         }
 
         $success = $isEdit ? 'Product updated successfully.' : 'Product added successfully.';
@@ -302,9 +319,10 @@ include __DIR__ . '/../../components/head.php';
               </div>
               <div id="variantRows" style="display:flex;flex-direction:column;gap:8px">
                 <?php foreach ($variants as $v): ?>
-                <div class="variant-row" style="display:grid;grid-template-columns:1fr 1fr 100px 32px;gap:8px;align-items:center">
+                <div class="variant-row" style="display:grid;grid-template-columns:1fr 1fr 90px 100px 32px;gap:8px;align-items:center">
                   <input type="text" name="var_label[]" class="form-control" value="<?= e($v['label']) ?>" placeholder="Label (e.g. Color)">
                   <input type="text" name="var_value[]" class="form-control" value="<?= e($v['value']) ?>" placeholder="Value (e.g. Red)">
+                  <input type="number" name="var_qty[]" class="form-control" value="<?= (int)$v['qty_adj'] ?>" placeholder="Qty" min="0">
                   <input type="number" name="var_price[]" class="form-control" value="<?= $v['price_adj'] ?>" placeholder="±Price" step="0.01">
                   <button type="button" onclick="this.closest('.variant-row').remove()" style="background:#fee2e2;border:none;color:#ef4444;border-radius:var(--radius-sm);width:32px;height:36px;cursor:pointer;display:flex;align-items:center;justify-content:center">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -314,6 +332,9 @@ include __DIR__ . '/../../components/head.php';
               </div>
               <?php if (empty($variants)): ?>
               <div id="noVariants" style="text-align:center;padding:20px;color:var(--text-muted);font-size:.83rem">No variants added</div>
+              <?php endif; ?>
+              <?php if (!empty($variants)): ?>
+              <div style="margin-top:8px;font-size:.76rem;color:var(--text-muted)">Total stock is auto-calculated from variant quantities below.</div>
               <?php endif; ?>
             </div>
 
@@ -466,10 +487,11 @@ function addVariant() {
   document.getElementById('noVariants')?.remove();
   const row = document.createElement('div');
   row.className = 'variant-row';
-  row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 100px 32px;gap:8px;align-items:center';
+  row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 90px 100px 32px;gap:8px;align-items:center';
   row.innerHTML = `
     <input type="text" name="var_label[]" class="form-control" placeholder="Label (e.g. Color)">
     <input type="text" name="var_value[]" class="form-control" placeholder="Value (e.g. Red)">
+    <input type="number" name="var_qty[]" class="form-control" placeholder="Qty" min="0" value="0">
     <input type="number" name="var_price[]" class="form-control" placeholder="±Price" step="0.01" value="0">
     <button type="button" onclick="this.closest('.variant-row').remove()" style="background:#fee2e2;border:none;color:#ef4444;border-radius:var(--radius-sm);width:32px;height:36px;cursor:pointer;display:flex;align-items:center;justify-content:center">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
