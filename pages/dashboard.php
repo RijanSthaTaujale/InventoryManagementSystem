@@ -32,12 +32,15 @@ $totalProducts = (int)$pdo->query("SELECT COUNT(*) FROM products WHERE status='a
 // Low / critical stock
 $lowStock = (int)$pdo->query("SELECT COUNT(*) FROM products WHERE stock_status IN ('lowstock','critical') AND status='active'")->fetchColumn();
 
-// Revenue (admin only)
+// Revenue (admin only). "Today" is dispatch-based, not creation-based — stock/
+// revenue only actually move at dispatch, so a new order placed today with
+// nothing shipped yet shouldn't count, and an older order dispatched today
+// should. Reuses the same figure as the Dispatched Today stat card below.
 $totalRevenue = 0;
 $todayRevenue = 0;
 if ($isAdmin) {
   $totalRevenue = (float)$pdo->query("SELECT COALESCE(SUM(total),0) FROM orders WHERE status NOT IN ('cancelled','returned')")->fetchColumn();
-  $todayRevenue = (float)$pdo->query("SELECT COALESCE(SUM(total),0) FROM orders WHERE DATE(created_at)=CURDATE() AND status NOT IN ('cancelled','returned')")->fetchColumn();
+  $todayRevenue = $dispatchedTodayRevenue;
 }
 
 // ── Product Performance (units sold per product, date-range filterable) ──
@@ -105,7 +108,7 @@ include __DIR__ . '/../components/head.php';
           <div>
             <div class="stat-label">Total Revenue</div>
             <div class="stat-value amount"><?= $currency ?> <?= number_format($totalRevenue, 2) ?></div>
-            <div class="stat-sub">Today: <?= $currency ?> <?= number_format($todayRevenue, 2) ?></div>
+            <div class="stat-sub">Dispatched today: <?= $currency ?> <?= number_format($todayRevenue, 2) ?></div>
           </div>
           <div class="stat-icon green">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
