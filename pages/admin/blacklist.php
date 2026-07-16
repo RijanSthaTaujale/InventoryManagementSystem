@@ -4,7 +4,7 @@ require_once __DIR__ . '/../../config/app.php';
 require_once __DIR__ . '/../../config/auth_guard.php';
 
 $user = currentUser();
-if ($user['role'] !== 'admin') redirect('/pages/dashboard.php');
+if (!in_array($user['role'], ['admin', 'supervisor'], true)) redirect('/pages/dashboard.php');
 
 $activePage = 'blacklist';
 $pageTitle  = 'Customer Blacklist';
@@ -104,7 +104,7 @@ async function saveBlacklist() {
   const reason = document.getElementById('blReason').value.trim();
   if (!/^\d{10}$/.test(phone)) { showToast('Phone number must be exactly 10 digits', 'error'); return; }
 
-  const r = await fetch(`${APP_URL}/api/admin.php?action=add_blacklist`, {
+  const r = await fetch(`${APP_URL}/api/orders.php?action=add_blacklist`, {
     method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ phone, reason })
   });
   const d = await r.json();
@@ -119,7 +119,7 @@ async function saveBlacklist() {
 
 async function removeEntry(id, phone) {
   if (!confirm(`Remove ${phone} from the blacklist?`)) return;
-  const r = await fetch(`${APP_URL}/api/admin.php?action=remove_blacklist`, {
+  const r = await fetch(`${APP_URL}/api/orders.php?action=remove_blacklist`, {
     method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id })
   });
   const d = await r.json();

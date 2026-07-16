@@ -115,6 +115,9 @@ $userInitial = strtoupper(substr($userName, 0, 1));
       Categories
     </a>
 
+    <?php endif; ?>
+
+    <?php if ($role === 'admin' || $role === 'supervisor'): ?>
     <!-- Blacklist -->
     <a href="<?= APP_URL ?>/pages/admin/blacklist.php"
        class="nav-item <?= $activePage === 'blacklist' ? 'active' : '' ?>">
@@ -124,9 +127,6 @@ $userInitial = strtoupper(substr($userName, 0, 1));
       Blacklist
     </a>
 
-    <?php endif; ?>
-
-    <?php if ($role === 'admin' || $role === 'supervisor'): ?>
     <!-- Damaged Stock -->
     <a href="<?= APP_URL ?>/pages/inventory/damaged.php"
        class="nav-item <?= $activePage === 'damaged' ? 'active' : '' ?>">

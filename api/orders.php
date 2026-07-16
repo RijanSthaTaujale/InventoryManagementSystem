@@ -24,6 +24,40 @@ if ($action === 'check_blacklist') {
     exit;
 }
 
+// ── ADD TO BLACKLIST (admin + supervisor) ────────────────────
+if ($action === 'add_blacklist' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!$isAdmin && !$isSuper) { echo json_encode(['success'=>false,'message'=>'Unauthorized']); exit; }
+
+    $body   = json_decode(file_get_contents('php://input'), true);
+    $phone  = trim($body['phone']  ?? '');
+    $reason = trim($body['reason'] ?? '');
+
+    if (!preg_match('/^\d{10}$/', $phone)) {
+        echo json_encode(['success'=>false,'message'=>'Phone number must be exactly 10 digits']); exit;
+    }
+
+    $pdo->prepare("
+        INSERT INTO customer_blacklist (phone, reason, blacklisted_by) VALUES (?,?,?)
+        ON DUPLICATE KEY UPDATE reason = VALUES(reason), blacklisted_by = VALUES(blacklisted_by), created_at = NOW()
+    ")->execute([$phone, $reason ?: null, $user['id']]);
+    echo json_encode(['success'=>true]);
+    exit;
+}
+
+// ── REMOVE FROM BLACKLIST (admin + supervisor) ───────────────
+if ($action === 'remove_blacklist' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!$isAdmin && !$isSuper) { echo json_encode(['success'=>false,'message'=>'Unauthorized']); exit; }
+
+    $body = json_decode(file_get_contents('php://input'), true);
+    $id   = (int)($body['id'] ?? 0);
+
+    if (!$id) { echo json_encode(['success'=>false,'message'=>'Invalid entry']); exit; }
+
+    $pdo->prepare("DELETE FROM customer_blacklist WHERE id=?")->execute([$id]);
+    echo json_encode(['success'=>true]);
+    exit;
+}
+
 // Applies qty_change (direction * item qty) to every product in an order's
 // line items, recalculates stock_status, and logs one stock_adjustments row
 // per item. direction: -1 to deduct (dispatch), +1 to restore (return).
