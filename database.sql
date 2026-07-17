@@ -118,14 +118,15 @@ CREATE TABLE IF NOT EXISTS `product_photos` (
   INDEX `idx_product` (`product_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Product variants (size, color, etc.)
+-- Product variants (size, color, etc.) — each variant has its own sell/buy price
 CREATE TABLE IF NOT EXISTS `product_variants` (
   `id`         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   `product_id` INT UNSIGNED NOT NULL,
   `label`      VARCHAR(50)  NOT NULL COMMENT 'e.g. Color, Size',
   `value`      VARCHAR(100) NOT NULL COMMENT 'e.g. Red, XL',
   `sku_suffix` VARCHAR(30)  DEFAULT NULL,
-  `price_adj`  DECIMAL(10,2) NOT NULL DEFAULT 0 COMMENT 'Price adjustment (+/-)',
+  `sell_price` DECIMAL(10,2) NOT NULL DEFAULT 0,
+  `buy_price`  DECIMAL(10,2) NOT NULL DEFAULT 0,
   `qty_adj`    INT           NOT NULL DEFAULT 0,
   `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (`product_id`) REFERENCES `products`(`id`) ON DELETE CASCADE,

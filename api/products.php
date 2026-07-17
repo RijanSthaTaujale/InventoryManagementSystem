@@ -23,7 +23,7 @@ if ($action === 'search') {
     $stmt->execute([$like,$like,$like]);
     $products = $stmt->fetchAll();
 
-    $variantStmt = $pdo->prepare("SELECT id,label,value,price_adj,qty_adj FROM product_variants WHERE product_id=? ORDER BY id");
+    $variantStmt = $pdo->prepare("SELECT id,label,value,sell_price,buy_price,qty_adj FROM product_variants WHERE product_id=? ORDER BY id");
     foreach ($products as &$p) {
         $p['image_url'] = productImageUrl($p['image_url']);
         $variantStmt->execute([$p['id']]);

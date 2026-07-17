@@ -369,8 +369,8 @@ function pickProduct(pi) {
     <div onclick="addItem(lastSearchProducts[${pi}], lastSearchProducts[${pi}].variants[${vi}])"
          style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 14px;cursor:pointer;border-bottom:1px solid var(--border)"
          onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
-      <div style="font-size:.84rem;font-weight:600">${v.label}: ${v.value}</div>
-      <div style="font-size:.74rem;color:${v.qty_adj <= 0 ? '#ef4444' : 'var(--text-muted)'}">${v.qty_adj <= 0 ? 'Out of stock' : `Stock: ${v.qty_adj}`}${parseFloat(v.price_adj) ? ` &nbsp;·&nbsp; ${v.price_adj > 0 ? '+' : ''}${CURRENCY} ${v.price_adj}` : ''}</div>
+      <div style="font-size:.84rem;font-weight:600">${v.label}: ${v.value} &nbsp;·&nbsp; ${CURRENCY} ${Number(v.sell_price).toLocaleString()}</div>
+      <div style="font-size:.74rem;color:${v.qty_adj <= 0 ? '#ef4444' : 'var(--text-muted)'}">${v.qty_adj <= 0 ? 'Out of stock' : `Stock: ${v.qty_adj}`}</div>
     </div>`).join('');
 }
 
@@ -389,8 +389,8 @@ function addItem(p, variant = null) {
     id: p.id,
     name: p.name,
     product_id: p.product_id,
-    sell_price: parseFloat(p.sell_price) + (variant ? parseFloat(variant.price_adj || 0) : 0),
-    buy_price: parseFloat(p.buy_price),
+    sell_price: variant ? parseFloat(variant.sell_price) : parseFloat(p.sell_price),
+    buy_price: variant ? parseFloat(variant.buy_price) : parseFloat(p.buy_price),
     qty: 1,
     variant_id: variantId,
     variant_info: variant ? `${variant.label}: ${variant.value}` : null,

@@ -125,15 +125,14 @@ include __DIR__ . '/../../components/head.php';
                   <div style="font-size:.78rem;font-weight:600;color:var(--text-muted);margin-bottom:8px">Variants</div>
                   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">
                     <?php foreach ($variants as $v):
-                      $vPrice   = (float)$p['sell_price'] + (float)$v['price_adj'];
                       $vInStock = $v['qty_adj'] > 0;
                       $vColor   = $v['qty_adj'] <= 0 ? '#ef4444' : 'var(--primary)';
                     ?>
                     <div style="border:1.5px solid var(--border);border-radius:var(--radius-md);padding:10px 12px">
                       <div style="font-size:.8rem;font-weight:700"><?= e($v['label']) ?>: <?= e($v['value']) ?></div>
-                      <div style="font-size:1.05rem;font-weight:700;color:var(--primary);margin-top:4px"><?= $currency ?> <?= number_format($vPrice, 0) ?></div>
+                      <div style="font-size:1.05rem;font-weight:700;color:var(--primary);margin-top:4px"><?= $currency ?> <?= number_format($v['sell_price'], 0) ?></div>
                       <?php if ($isAdmin): ?>
-                      <div style="font-size:.72rem;color:var(--text-muted)">Buy: <?= $currency ?> <?= number_format($p['buy_price'], 0) ?></div>
+                      <div style="font-size:.72rem;color:var(--text-muted)">Buy: <?= $currency ?> <?= number_format($v['buy_price'], 0) ?></div>
                       <?php endif; ?>
                       <div style="font-size:1.2rem;font-weight:800;color:<?= $vColor ?>;margin-top:6px"><?= (int)$v['qty_adj'] ?></div>
                       <div style="font-size:.7rem;color:var(--text-muted)">units in stock</div>

@@ -158,17 +158,24 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         // Orders are allowed regardless of stock level — quantity may go negative (backorder).
 
-        $sell_price   = (float)($item['sell_price'] ?? $product['sell_price']);
-        $buy_price    = (float)$product['buy_price'];
+        // A variant, if selected, has its own independent sell/buy price — not
+        // an adjustment on the product's. Buy price always comes from the
+        // server (never client-trusted); sell price can still be overridden
+        // per line item (existing discount/negotiation behavior).
+        $variant_id = (int)($item['variant_id'] ?? 0) ?: null;
+        $variant    = null;
+        if ($variant_id) {
+            $vCheck = $pdo->prepare("SELECT id, sell_price, buy_price FROM product_variants WHERE id=? AND product_id=?");
+            $vCheck->execute([$variant_id, $product_id]);
+            $variant = $vCheck->fetch();
+            if (!$variant) $variant_id = null;
+        }
+
+        $defaultSellPrice = $variant ? $variant['sell_price'] : $product['sell_price'];
+        $sell_price   = (float)($item['sell_price'] ?? $defaultSellPrice);
+        $buy_price    = (float)($variant ? $variant['buy_price'] : $product['buy_price']);
         $line_total   = $sell_price * $qty;
         $subtotal    += $line_total;
-
-        $variant_id = (int)($item['variant_id'] ?? 0) ?: null;
-        if ($variant_id) {
-            $vCheck = $pdo->prepare("SELECT id FROM product_variants WHERE id=? AND product_id=?");
-            $vCheck->execute([$variant_id, $product_id]);
-            if (!$vCheck->fetch()) $variant_id = null;
-        }
 
         $lineItems[] = [
             'product_id'   => $product_id,
@@ -336,17 +343,24 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         // Orders are allowed regardless of stock level — quantity may go negative (backorder).
 
-        $sell_price   = (float)($item['sell_price'] ?? $product['sell_price']);
-        $buy_price    = (float)$product['buy_price'];
+        // A variant, if selected, has its own independent sell/buy price — not
+        // an adjustment on the product's. Buy price always comes from the
+        // server (never client-trusted); sell price can still be overridden
+        // per line item (existing discount/negotiation behavior).
+        $variant_id = (int)($item['variant_id'] ?? 0) ?: null;
+        $variant    = null;
+        if ($variant_id) {
+            $vCheck = $pdo->prepare("SELECT id, sell_price, buy_price FROM product_variants WHERE id=? AND product_id=?");
+            $vCheck->execute([$variant_id, $product_id]);
+            $variant = $vCheck->fetch();
+            if (!$variant) $variant_id = null;
+        }
+
+        $defaultSellPrice = $variant ? $variant['sell_price'] : $product['sell_price'];
+        $sell_price   = (float)($item['sell_price'] ?? $defaultSellPrice);
+        $buy_price    = (float)($variant ? $variant['buy_price'] : $product['buy_price']);
         $line_total   = $sell_price * $qty;
         $subtotal    += $line_total;
-
-        $variant_id = (int)($item['variant_id'] ?? 0) ?: null;
-        if ($variant_id) {
-            $vCheck = $pdo->prepare("SELECT id FROM product_variants WHERE id=? AND product_id=?");
-            $vCheck->execute([$variant_id, $product_id]);
-            if (!$vCheck->fetch()) $variant_id = null;
-        }
 
         $lineItems[] = [
             'product_id'   => $product_id,
