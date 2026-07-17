@@ -52,8 +52,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$check['ok']) $imageError = $check['message'];
     }
 
+    // If the product has variants, each one carries its own price — the
+    // product-level sell price is just an auto-computed reference (see below),
+    // so it isn't required up front the way it is for a plain product.
+    $hasVariants = false;
+    if (!empty($d['var_label'])) {
+        foreach ($d['var_label'] as $i => $vLabel) {
+            if (trim($vLabel) && trim($d['var_value'][$i] ?? '')) { $hasVariants = true; break; }
+        }
+    }
+
     if (!$name)        { $error = 'Product name is required.'; }
-    elseif (!$sell_price) { $error = 'Sell price is required.'; }
+    elseif (!$sell_price && !$hasVariants) { $error = 'Sell price is required.'; }
     elseif ($imageError)  { $error = $imageError; }
     else {
         // Slug
@@ -163,19 +173,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        // When a product has variants, products.quantity is the auto-computed
-        // sum of each variant's own stock, not a manually-entered number.
+        // When a product has variants, products.quantity/sell_price/buy_price are
+        // auto-computed from the variants rather than manually entered — quantity
+        // is their sum, price is the lowest variant price (a "from Rs X" reference;
+        // the actual charged price always comes from the specific variant chosen).
         if ($variantCount > 0) {
-            $sumStmt = $pdo->prepare("SELECT COALESCE(SUM(qty_adj),0) FROM product_variants WHERE product_id=?");
+            $sumStmt = $pdo->prepare("SELECT COALESCE(SUM(qty_adj),0) AS qty, COALESCE(MIN(sell_price),0) AS min_sell, COALESCE(MIN(buy_price),0) AS min_buy FROM product_variants WHERE product_id=?");
             $sumStmt->execute([$savedId]);
-            $variantTotal = (int)$sumStmt->fetchColumn();
+            $variantAgg   = $sumStmt->fetch();
+            $variantTotal = (int)$variantAgg['qty'];
 
             $newStockStatus = $variantTotal <= 0 ? 'outofstock'
                 : ($variantTotal <= 2 ? 'critical'
                 : ($variantTotal <= $min_stock ? 'lowstock' : 'instock'));
 
-            $pdo->prepare("UPDATE products SET quantity=?, stock_status=? WHERE id=?")
-                ->execute([$variantTotal, $newStockStatus, $savedId]);
+            $pdo->prepare("UPDATE products SET quantity=?, stock_status=?, sell_price=?, buy_price=? WHERE id=?")
+                ->execute([$variantTotal, $newStockStatus, $variantAgg['min_sell'], $variantAgg['min_buy'], $savedId]);
         }
 
         $success = $isEdit ? 'Product updated successfully.' : 'Product added successfully.';
@@ -398,9 +411,10 @@ include __DIR__ . '/../../components/head.php';
                   </div>
                   <div class="form-group">
                     <label class="form-label">Sell Price (Rs) *</label>
-                    <input type="number" name="sell_price" class="form-control" value="<?= $product['sell_price'] ?? '' ?>" min="0" step="0.01" placeholder="0.00" required>
+                    <input type="number" name="sell_price" class="form-control" value="<?= $product['sell_price'] ?? '' ?>" min="0" step="0.01" placeholder="0.00">
                   </div>
                 </div>
+                <div class="form-hint" style="margin-top:-6px;margin-bottom:8px">If you add variants below, leave these blank — they'll be set automatically from the variants' own prices.</div>
                 <div class="form-group">
                   <label class="form-label">Location</label>
                   <input type="text" name="location" class="form-control" value="<?= e($product['location'] ?? '') ?>" placeholder="e.g. Shelf A1">
@@ -479,9 +493,15 @@ function addVariant() {
   const row = document.createElement('div');
   row.className = 'variant-row';
   row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 70px 90px 90px 32px;gap:8px;align-items:center';
-  // Default to the product's own current prices so admins only need to edit variants that differ
-  const baseSell = document.querySelector('[name="sell_price"]')?.value || 0;
-  const baseBuy  = document.querySelector('[name="buy_price"]')?.value || 0;
+  // Default to the last variant row's prices if one exists (common case: same
+  // price across sizes/colors), otherwise the product's own price fields, so
+  // admins usually only need to edit the rows that actually differ.
+  const existingRows = document.querySelectorAll('.variant-row');
+  const lastRow = existingRows[existingRows.length - 1];
+  const baseSell = lastRow ? lastRow.querySelector('[name="var_sell_price[]"]').value
+    : (document.querySelector('[name="sell_price"]')?.value || 0);
+  const baseBuy = lastRow ? lastRow.querySelector('[name="var_buy_price[]"]').value
+    : (document.querySelector('[name="buy_price"]')?.value || 0);
   row.innerHTML = `
     <input type="text" name="var_label[]" class="form-control" placeholder="Label (e.g. Color)">
     <input type="text" name="var_value[]" class="form-control" placeholder="Value (e.g. Red)">
