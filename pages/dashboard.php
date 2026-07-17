@@ -32,15 +32,32 @@ $totalProducts = (int)$pdo->query("SELECT COUNT(*) FROM products WHERE status='a
 // Low / critical stock
 $lowStock = (int)$pdo->query("SELECT COUNT(*) FROM products WHERE stock_status IN ('lowstock','critical') AND status='active'")->fetchColumn();
 
-// Revenue (admin only). "Today" is dispatch-based, not creation-based — stock/
+// Revenue (admin only). Dispatch-based throughout, not creation-based — stock/
 // revenue only actually move at dispatch, so a new order placed today with
 // nothing shipped yet shouldn't count, and an older order dispatched today
-// should. Reuses the same figure as the Dispatched Today stat card below.
+// should. "Today" reuses the same figure as the Dispatched Today stat card below.
 $totalRevenue = 0;
 $todayRevenue = 0;
 if ($isAdmin) {
-  $totalRevenue = (float)$pdo->query("SELECT COALESCE(SUM(total),0) FROM orders WHERE status NOT IN ('cancelled','returned')")->fetchColumn();
+  $totalRevenue = (float)$pdo->query("SELECT COALESCE(SUM(total),0) FROM orders WHERE dispatched_at IS NOT NULL")->fetchColumn();
   $todayRevenue = $dispatchedTodayRevenue;
+}
+
+// ── Dispatched by day (admin only, date-range filterable, defaults to current month) ──
+$dispByDay = [];
+if ($isAdmin) {
+  $dispFrom = $_GET['disp_from'] ?? date('Y-m-01');
+  $dispTo   = $_GET['disp_to']   ?? date('Y-m-d');
+
+  $dispStmt = $pdo->prepare("
+    SELECT DATE(dispatched_at) AS day, COUNT(*) AS cnt, COALESCE(SUM(total),0) AS revenue
+    FROM orders
+    WHERE dispatched_at IS NOT NULL AND DATE(dispatched_at) BETWEEN ? AND ?
+    GROUP BY DATE(dispatched_at)
+    ORDER BY day DESC
+  ");
+  $dispStmt->execute([$dispFrom, $dispTo]);
+  $dispByDay = $dispStmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
 // ── Product Performance (units sold per product, date-range filterable) ──
@@ -145,7 +162,9 @@ include __DIR__ . '/../components/head.php';
           <div>
             <div class="stat-label">Dispatched Today</div>
             <div class="stat-value"><?= number_format($dispatchedTodayCount) ?></div>
+            <?php if ($isAdmin): ?>
             <div class="stat-sub"><?= $currency ?> <?= number_format($dispatchedTodayRevenue, 2) ?> revenue</div>
+            <?php endif; ?>
           </div>
           <div class="stat-icon green">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3H4a2 2 0 0 0-2 2v14l4-4h12a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z"/><path d="m9 12 2 2 4-4"/></svg>
@@ -190,6 +209,46 @@ include __DIR__ . '/../components/head.php';
         </div>
         <?php endif; ?>
       </div>
+
+      <?php if ($isAdmin): ?>
+      <!-- ── Dispatched By Day ── -->
+      <div class="card" style="margin-bottom:20px">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Dispatched By Day</div>
+            <div class="card-sub">Orders dispatched and revenue per day in the selected range</div>
+          </div>
+          <form method="GET" style="display:flex;gap:8px;align-items:center">
+            <input type="date" name="disp_from" value="<?= e($dispFrom) ?>" class="form-control" style="width:auto" title="From date">
+            <input type="date" name="disp_to" value="<?= e($dispTo) ?>" class="form-control" style="width:auto" title="To date">
+            <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+          </form>
+        </div>
+        <div class="data-table-wrap" style="border:none">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Dispatched Orders</th>
+                <th>Dispatched Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php if (empty($dispByDay)): ?>
+                <tr><td colspan="3" style="text-align:center;color:var(--text-muted);padding:24px">No dispatches in this range</td></tr>
+              <?php endif; ?>
+              <?php foreach ($dispByDay as $d): ?>
+              <tr>
+                <td><?= date('d M Y', strtotime($d['day'])) ?></td>
+                <td style="font-weight:600"><?= number_format($d['cnt']) ?></td>
+                <td style="font-weight:700;color:var(--primary)"><?= $currency ?> <?= number_format($d['revenue'], 2) ?></td>
+              </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <?php endif; ?>
 
       <!-- ── Product Performance ── -->
       <div class="card" style="margin-bottom:20px">

@@ -388,10 +388,16 @@ async function onStatusChange(selectEl) {
 
   if (newStatus === prevStatus) return;
 
+  let note = '';
+  if (newStatus === 'cancelled' || newStatus === 'pending') {
+    note = (prompt(`Reason for marking this order "${newStatus}"?`) || '').trim();
+    if (!note) { selectEl.value = prevStatus; return; }
+  }
+
   selectEl.disabled = true;
   const res = await fetch(`${APP_URL}/api/orders.php?action=status`, {
     method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ order_id: orderId, status: newStatus })
+    body: JSON.stringify({ order_id: orderId, status: newStatus, note })
   });
   const data = await res.json();
   selectEl.disabled = false;

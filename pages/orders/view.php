@@ -14,11 +14,12 @@ $orderId = trim($_GET['id'] ?? '');
 if (!$orderId) redirect('/pages/orders/index.php');
 
 $stmt = $pdo->prepare("
-    SELECT o.*, u1.name AS assigned_name, u2.name AS dispatched_name, u3.name AS created_name
+    SELECT o.*, u1.name AS assigned_name, u2.name AS dispatched_name, u3.name AS created_name, fp.name AS fb_page_name
     FROM orders o
     LEFT JOIN users u1 ON u1.id = o.assigned_to
     LEFT JOIN users u2 ON u2.id = o.dispatched_by
     LEFT JOIN users u3 ON u3.id = o.created_by
+    LEFT JOIN fb_pages fp ON fp.id = o.fb_page_id
     WHERE o.order_id = ?
 ");
 $stmt->execute([$orderId]);
@@ -148,9 +149,7 @@ include __DIR__ . '/../../components/head.php';
           <?php if (in_array($order['status'], ['new', 'pending', 'confirmed'])): ?>
           <a href="<?= APP_URL ?>/pages/orders/create.php?edit=<?= urlencode($order['order_id']) ?>" class="btn btn-outline btn-sm">Edit Order</a>
           <?php endif; ?>
-          <?php if ($isAdmin): ?>
-          <a href="<?= APP_URL ?>/pages/orders/create.php" class="btn btn-outline btn-sm">New Order</a>
-          <?php endif; ?>
+          <a href="<?= APP_URL ?>/pages/orders/create.php" class="btn btn-primary btn-sm">New Order</a>
         </div>
       </div>
 
@@ -296,6 +295,12 @@ include __DIR__ . '/../../components/head.php';
                 <?php endif; ?>
               </div>
             </div>
+            <?php if ($order['fb_page_name']): ?>
+            <div style="display:flex;align-items:center;gap:7px;font-size:.82rem;color:var(--text-secondary);margin-bottom:8px">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
+              <?= e($order['fb_page_name']) ?>
+            </div>
+            <?php endif; ?>
             <?php if ($order['customer_email']): ?>
             <div style="display:flex;align-items:center;gap:7px;font-size:.82rem;color:var(--text-secondary);margin-bottom:8px">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
@@ -383,7 +388,11 @@ include __DIR__ . '/../../components/head.php';
 <div id="statusModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:var(--radius-xl);padding:28px;max-width:360px;width:90%;box-shadow:var(--shadow-md)">
     <div style="font-size:1.05rem;font-weight:700;margin-bottom:6px" id="modalTitle"></div>
-    <p style="font-size:.86rem;color:var(--text-secondary);margin-bottom:20px" id="modalMsg"></p>
+    <p style="font-size:.86rem;color:var(--text-secondary);margin-bottom:14px" id="modalMsg"></p>
+    <div class="form-group" id="modalNoteGroup" style="display:none;margin-bottom:16px">
+      <label class="form-label">Reason *</label>
+      <textarea id="modalNote" class="form-control" rows="2" placeholder="Why is this order being cancelled / put on hold?"></textarea>
+    </div>
     <div style="display:flex;gap:10px;justify-content:flex-end">
       <button class="btn btn-outline btn-sm" onclick="document.getElementById('statusModal').style.display='none'">Cancel</button>
       <button class="btn btn-primary btn-sm" id="modalConfirmBtn">Confirm</button>
@@ -403,16 +412,21 @@ function changeStatus(newStatus) {
   if (newStatus === prevStatus) return;
 
   const label = dropdown.options[dropdown.selectedIndex].text;
+  const needsNote = newStatus === 'cancelled' || newStatus === 'pending';
   document.getElementById('modalTitle').textContent = label;
   document.getElementById('modalMsg').textContent   = `Change order ${ORDER_ID} status to "${label}"?`;
+  document.getElementById('modalNoteGroup').style.display = needsNote ? '' : 'none';
+  document.getElementById('modalNote').value = '';
   document.getElementById('statusModal').style.display = 'flex';
 
   document.getElementById('modalConfirmBtn').onclick = async () => {
+    const note = document.getElementById('modalNote').value.trim();
+    if (needsNote && !note) { showToast('Please enter a reason', 'error'); return; }
     document.getElementById('statusModal').style.display = 'none';
     dropdown.disabled = true;
     const r = await fetch(`${APP_URL}/api/orders.php?action=status`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ order_id: ORDER_ID, status: newStatus })
+      body: JSON.stringify({ order_id: ORDER_ID, status: newStatus, note })
     });
     const d = await r.json();
     dropdown.disabled = false;

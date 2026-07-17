@@ -24,10 +24,6 @@ $photos->execute([$id]); $photos = $photos->fetchAll();
 $variants = $pdo->prepare("SELECT * FROM product_variants WHERE product_id=? ORDER BY label,value");
 $variants->execute([$id]); $variants = $variants->fetchAll();
 
-// Group variants by label
-$varGroups = [];
-foreach ($variants as $v) $varGroups[$v['label']][] = $v;
-
 // Stock adjustments log
 $adjLog = $pdo->prepare("SELECT sa.*, u.name AS by_name FROM stock_adjustments sa LEFT JOIN users u ON u.id=sa.adjusted_by WHERE sa.product_id=? ORDER BY sa.created_at DESC LIMIT 10");
 $adjLog->execute([$id]); $adjLog = $adjLog->fetchAll();
@@ -123,17 +119,30 @@ include __DIR__ . '/../../components/head.php';
                 <p style="font-size:.88rem;color:var(--text-secondary);line-height:1.6;margin-bottom:14px"><?= nl2br(e($p['description'])) ?></p>
                 <?php endif; ?>
 
-                <!-- Variants -->
-                <?php foreach ($varGroups as $label => $vals): ?>
-                <div style="margin-bottom:10px">
-                  <div style="font-size:.78rem;font-weight:600;color:var(--text-muted);margin-bottom:5px"><?= e($label) ?></div>
-                  <div style="display:flex;gap:6px;flex-wrap:wrap">
-                    <?php foreach ($vals as $v): ?>
-                    <span style="padding:4px 12px;border:1.5px solid var(--border);border-radius:9999px;font-size:.8rem;font-weight:500;color:<?= $v['qty_adj']<=0?'#ef4444':'inherit' ?>"><?= e($v['value']) ?><?= $v['price_adj']!=0?' ('.($v['price_adj']>0?'+':'').number_format($v['price_adj'],0).')':'' ?> · <?= (int)$v['qty_adj'] ?> in stock</span>
+                <!-- Variants — each shown with its own price/stock, like a mini product -->
+                <?php if (!empty($variants)): ?>
+                <div style="margin-bottom:14px">
+                  <div style="font-size:.78rem;font-weight:600;color:var(--text-muted);margin-bottom:8px">Variants</div>
+                  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">
+                    <?php foreach ($variants as $v):
+                      $vPrice   = (float)$p['sell_price'] + (float)$v['price_adj'];
+                      $vInStock = $v['qty_adj'] > 0;
+                      $vColor   = $v['qty_adj'] <= 0 ? '#ef4444' : 'var(--primary)';
+                    ?>
+                    <div style="border:1.5px solid var(--border);border-radius:var(--radius-md);padding:10px 12px">
+                      <div style="font-size:.8rem;font-weight:700"><?= e($v['label']) ?>: <?= e($v['value']) ?></div>
+                      <div style="font-size:1.05rem;font-weight:700;color:var(--primary);margin-top:4px"><?= $currency ?> <?= number_format($vPrice, 0) ?></div>
+                      <?php if ($isAdmin): ?>
+                      <div style="font-size:.72rem;color:var(--text-muted)">Buy: <?= $currency ?> <?= number_format($p['buy_price'], 0) ?></div>
+                      <?php endif; ?>
+                      <div style="font-size:1.2rem;font-weight:800;color:<?= $vColor ?>;margin-top:6px"><?= (int)$v['qty_adj'] ?></div>
+                      <div style="font-size:.7rem;color:var(--text-muted)">units in stock</div>
+                      <span class="badge <?= $vInStock ? 'badge-instock' : 'badge-critical' ?>" style="margin-top:6px;display:inline-block"><?= $vInStock ? 'In Stock' : 'Out of Stock' ?></span>
+                    </div>
                     <?php endforeach; ?>
                   </div>
                 </div>
-                <?php endforeach; ?>
+                <?php endif; ?>
 
                 <!-- Meta grid -->
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px">

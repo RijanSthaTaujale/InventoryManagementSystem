@@ -411,10 +411,16 @@ if ($action === 'status' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $body      = json_decode(file_get_contents('php://input'), true);
     $orderId   = trim($body['order_id'] ?? '');
     $newStatus = trim($body['status']   ?? '');
+    $note      = trim($body['note']     ?? '');
 
     $valid = ['new','confirmed','pending','cancelled','dispatched','delivered','returned','in_courier'];
     if (!$orderId || !in_array($newStatus, $valid)) {
         echo json_encode(['success' => false, 'message' => 'Invalid data']); exit;
+    }
+
+    // A reason is required so it's clear later why an order was cancelled or held pending
+    if (in_array($newStatus, ['cancelled', 'pending']) && !$note) {
+        echo json_encode(['success' => false, 'message' => 'A remarks/reason is required for this status.']); exit;
     }
 
     // Role-based permission checks
@@ -442,8 +448,8 @@ if ($action === 'status' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $pdo->prepare("UPDATE orders SET status=?, updated_by=?$extra WHERE id=?")->execute($params);
 
-        $pdo->prepare("INSERT INTO order_status_log (order_id,from_status,to_status,changed_by) VALUES (?,?,?,?)")
-            ->execute([$order['id'], $order['status'], $newStatus, $user['id']]);
+        $pdo->prepare("INSERT INTO order_status_log (order_id,from_status,to_status,changed_by,note) VALUES (?,?,?,?,?)")
+            ->execute([$order['id'], $order['status'], $newStatus, $user['id'], $note ?: null]);
 
         // Stock deducts once, at dispatch time
         if ($newStatus === 'dispatched' && !$order['stock_deducted']) {

@@ -42,26 +42,29 @@ $stmt->execute([$dFrom,$dTo]); $totalOrders = (int)$stmt->fetchColumn();
 $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE created_at BETWEEN ? AND ? AND status NOT IN ('cancelled','returned')");
 $stmt->execute([$dFrom,$dTo]); $completedOrders = (int)$stmt->fetchColumn();
 
-// Revenue (admin only)
+// Revenue (admin only). Dispatch-based, not creation-based — revenue only
+// actually counts once an order ships, matching the Dashboard's Total Revenue.
 $totalRevenue = $todayRevenue = $avgOrder = 0;
 if ($isAdmin) {
-    $stmt = $pdo->prepare("SELECT COALESCE(SUM(total),0) FROM orders WHERE created_at BETWEEN ? AND ? AND status NOT IN ('cancelled','returned')");
-    $stmt->execute([$dFrom,$dTo]); $totalRevenue = (float)$stmt->fetchColumn();
+    $stmt = $pdo->prepare("SELECT COUNT(*) AS cnt, COALESCE(SUM(total),0) AS revenue FROM orders WHERE dispatched_at BETWEEN ? AND ?");
+    $stmt->execute([$dFrom,$dTo]);
+    $dispatchedRow = $stmt->fetch();
+    $totalRevenue = (float)$dispatchedRow['revenue'];
+    $dispatchedOrdersInRange = (int)$dispatchedRow['cnt'];
 
-    $stmt = $pdo->prepare("SELECT COALESCE(SUM(total),0) FROM orders WHERE DATE(created_at)=CURDATE() AND status NOT IN ('cancelled','returned')");
+    $stmt = $pdo->prepare("SELECT COALESCE(SUM(total),0) FROM orders WHERE DATE(dispatched_at)=CURDATE()");
     $stmt->execute(); $todayRevenue = (float)$stmt->fetchColumn();
 
-    $avgOrder = $completedOrders > 0 ? $totalRevenue / $completedOrders : 0;
+    $avgOrder = $dispatchedOrdersInRange > 0 ? $totalRevenue / $dispatchedOrdersInRange : 0;
 }
 
 // Total products & units
 $stmt = $pdo->query("SELECT COUNT(*), SUM(quantity) FROM products WHERE status='active'");
 [$totalProducts, $totalUnits] = $stmt->fetch(PDO::FETCH_NUM);
 
-// ── Sales by day (for chart) ──────────────────────────────────
+// ── Sales by day (order volume for chart; revenue comes from dispatched-by-day below) ──
 $salesByDay = $pdo->prepare("
-    SELECT DATE(created_at) AS day, COUNT(*) AS orders,
-           COALESCE(SUM(total),0) AS revenue
+    SELECT DATE(created_at) AS day, COUNT(*) AS orders
     FROM orders
     WHERE created_at BETWEEN ? AND ? AND status NOT IN ('cancelled','returned')
     GROUP BY DATE(created_at) ORDER BY day ASC
@@ -69,17 +72,20 @@ $salesByDay = $pdo->prepare("
 $salesByDay->execute([$dFrom,$dTo]);
 $salesByDay = $salesByDay->fetchAll();
 
-// ── Dispatched by day (reference line for chart) ───────────────
-$dispatchedByDay = $pdo->prepare("
-    SELECT DATE(dispatched_at) AS day, COUNT(*) AS dispatched
+// ── Dispatched by day (reference line for chart + revenue source) ──
+$dispatchedByDayStmt = $pdo->prepare("
+    SELECT DATE(dispatched_at) AS day, COUNT(*) AS dispatched, COALESCE(SUM(total),0) AS revenue
     FROM orders
     WHERE dispatched_at IS NOT NULL AND dispatched_at BETWEEN ? AND ?
     GROUP BY DATE(dispatched_at)
 ");
-$dispatchedByDay->execute([$dFrom,$dTo]);
-$dispatchedByDay = $dispatchedByDay->fetchAll(PDO::FETCH_KEY_PAIR);
+$dispatchedByDayStmt->execute([$dFrom,$dTo]);
+$dispatchedByDay = [];
+foreach ($dispatchedByDayStmt->fetchAll() as $row) {
+    $dispatchedByDay[$row['day']] = $row;
+}
 
-// ── Top products ──────────────────────────────────────────────
+// ── Top products (dispatch-based — same reasoning as revenue above) ──
 $topProducts = $pdo->prepare("
     SELECT p.name, p.product_id, p.image_url, p.sell_price, p.buy_price,
            SUM(oi.qty) AS sold_qty,
@@ -88,7 +94,7 @@ $topProducts = $pdo->prepare("
     FROM order_items oi
     JOIN orders o ON o.id = oi.order_id
     JOIN products p ON p.id = oi.product_id
-    WHERE o.created_at BETWEEN ? AND ? AND o.status NOT IN ('cancelled','returned')
+    WHERE o.dispatched_at BETWEEN ? AND ?
     GROUP BY oi.product_id
     ORDER BY sold_qty DESC LIMIT 10
 ");
@@ -104,11 +110,12 @@ $byStatus = $pdo->prepare("
 $byStatus->execute([$dFrom,$dTo]);
 $byStatus = $byStatus->fetchAll(PDO::FETCH_KEY_PAIR);
 
-// Chart data JSON
-$chartLabels  = array_column($salesByDay, 'day');
-$chartOrders  = array_column($salesByDay, 'orders');
-$chartRevenue = array_column($salesByDay, 'revenue');
-$chartDispatched = array_map(fn($d) => (int)($dispatchedByDay[$d] ?? 0), $chartLabels);
+// Chart data JSON. Orders (volume) stays creation-date based; Revenue and
+// Dispatched are both sourced from $dispatchedByDay since revenue is dispatch-based.
+$chartLabels      = array_column($salesByDay, 'day');
+$chartOrders      = array_column($salesByDay, 'orders');
+$chartRevenue     = array_map(fn($d) => (float)($dispatchedByDay[$d]['revenue'] ?? 0), $chartLabels);
+$chartDispatched  = array_map(fn($d) => (int)($dispatchedByDay[$d]['dispatched'] ?? 0), $chartLabels);
 
 include __DIR__ . '/../../components/head.php';
 ?>
