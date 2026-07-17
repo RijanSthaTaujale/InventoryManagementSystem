@@ -338,7 +338,7 @@ searchInput.addEventListener('input', () => {
     if (!d.products?.length) { dropdown.innerHTML = '<div style="padding:14px;text-align:center;color:var(--text-muted);font-size:.84rem">No products found</div>'; dropdown.style.display='block'; return; }
     lastSearchProducts = d.products;
     dropdown.innerHTML = d.products.map((p, pi) => `
-      <div onclick="pickProduct(${pi})"
+      <div onclick="event.stopPropagation(); pickProduct(${pi})"
            style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border)"
            onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
         <div style="width:36px;height:36px;background:var(--bg);border-radius:var(--radius-sm);flex-shrink:0;overflow:hidden">
@@ -363,10 +363,10 @@ function pickProduct(pi) {
   if (!p.variants || !p.variants.length) { addItem(p); return; }
   // Show a variant picker in place of the product list
   dropdown.innerHTML = `
-    <div onclick="renderSearchResults()" style="padding:9px 14px;cursor:pointer;font-size:.8rem;color:var(--primary);font-weight:600;border-bottom:1px solid var(--border)">&larr; Back to results</div>
+    <div onclick="event.stopPropagation(); renderSearchResults()" style="padding:9px 14px;cursor:pointer;font-size:.8rem;color:var(--primary);font-weight:600;border-bottom:1px solid var(--border)">&larr; Back to results</div>
     <div style="padding:8px 14px;font-size:.78rem;color:var(--text-muted)">${p.name} — choose a variant</div>
   ` + p.variants.map((v, vi) => `
-    <div onclick="addItem(lastSearchProducts[${pi}], lastSearchProducts[${pi}].variants[${vi}])"
+    <div onclick="event.stopPropagation(); addItem(lastSearchProducts[${pi}], lastSearchProducts[${pi}].variants[${vi}])"
          style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 14px;cursor:pointer;border-bottom:1px solid var(--border)"
          onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
       <div style="font-size:.84rem;font-weight:600">${v.label}: ${v.value} &nbsp;·&nbsp; ${CURRENCY} ${Number(v.sell_price).toLocaleString()}</div>
