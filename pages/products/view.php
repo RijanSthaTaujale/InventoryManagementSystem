@@ -137,6 +137,9 @@ include __DIR__ . '/../../components/head.php';
                       <div style="font-size:1.2rem;font-weight:800;color:<?= $vColor ?>;margin-top:6px"><?= (int)$v['qty_adj'] ?></div>
                       <div style="font-size:.7rem;color:var(--text-muted)">units in stock</div>
                       <span class="badge <?= $vInStock ? 'badge-instock' : 'badge-critical' ?>" style="margin-top:6px;display:inline-block"><?= $vInStock ? 'In Stock' : 'Out of Stock' ?></span>
+                      <?php if (!empty($v['remarks'])): ?>
+                      <div style="font-size:.72rem;color:var(--text-secondary);margin-top:6px;padding-top:6px;border-top:1px solid var(--border)"><?= e($v['remarks']) ?></div>
+                      <?php endif; ?>
                     </div>
                     <?php endforeach; ?>
                   </div>

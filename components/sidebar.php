@@ -115,6 +115,16 @@ $userInitial = strtoupper(substr($userName, 0, 1));
       Categories
     </a>
 
+    <!-- Couriers -->
+    <a href="<?= APP_URL ?>/pages/admin/couriers.php"
+       class="nav-item <?= $activePage === 'couriers' ? 'active' : '' ?>">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/>
+        <circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>
+      </svg>
+      Couriers
+    </a>
+
     <?php endif; ?>
 
     <?php if ($role === 'admin' || $role === 'supervisor'): ?>

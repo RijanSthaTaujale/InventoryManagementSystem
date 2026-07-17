@@ -32,15 +32,13 @@ $totalProducts = (int)$pdo->query("SELECT COUNT(*) FROM products WHERE status='a
 // Low / critical stock
 $lowStock = (int)$pdo->query("SELECT COUNT(*) FROM products WHERE stock_status IN ('lowstock','critical') AND status='active'")->fetchColumn();
 
-// Revenue (admin only). Dispatch-based throughout, not creation-based — stock/
-// revenue only actually move at dispatch, so a new order placed today with
-// nothing shipped yet shouldn't count, and an older order dispatched today
-// should. "Today" reuses the same figure as the Dispatched Today stat card below.
+// Revenue (admin only). Dispatch-based, not creation-based — stock/revenue
+// only actually move at dispatch, so a new order placed today with nothing
+// shipped yet shouldn't count. Today's figure reuses $dispatchedTodayRevenue,
+// computed above alongside the Dispatched Today stat.
 $totalRevenue = 0;
-$todayRevenue = 0;
 if ($isAdmin) {
   $totalRevenue = (float)$pdo->query("SELECT COALESCE(SUM(total),0) FROM orders WHERE dispatched_at IS NOT NULL")->fetchColumn();
-  $todayRevenue = $dispatchedTodayRevenue;
 }
 
 // ── Dispatched by day (admin only, date-range filterable, defaults to current month) ──
@@ -125,7 +123,7 @@ include __DIR__ . '/../components/head.php';
           <div>
             <div class="stat-label">Total Revenue</div>
             <div class="stat-value amount"><?= $currency ?> <?= number_format($totalRevenue, 2) ?></div>
-            <div class="stat-sub">Dispatched today: <?= $currency ?> <?= number_format($todayRevenue, 2) ?></div>
+            <div class="stat-sub">All-time, dispatched orders</div>
           </div>
           <div class="stat-icon green">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
@@ -162,14 +160,26 @@ include __DIR__ . '/../components/head.php';
           <div>
             <div class="stat-label">Dispatched Today</div>
             <div class="stat-value"><?= number_format($dispatchedTodayCount) ?></div>
-            <?php if ($isAdmin): ?>
-            <div class="stat-sub"><?= $currency ?> <?= number_format($dispatchedTodayRevenue, 2) ?> revenue</div>
-            <?php endif; ?>
+            <div class="stat-sub"><?= date('d M Y') ?></div>
           </div>
           <div class="stat-icon green">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3H4a2 2 0 0 0-2 2v14l4-4h12a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z"/><path d="m9 12 2 2 4-4"/></svg>
           </div>
         </div>
+
+        <!-- Today's Revenue (admin only) -->
+        <?php if ($isAdmin): ?>
+        <div class="stat-card">
+          <div>
+            <div class="stat-label">Today's Revenue</div>
+            <div class="stat-value amount"><?= $currency ?> <?= number_format($dispatchedTodayRevenue, 2) ?></div>
+            <div class="stat-sub">From dispatched orders</div>
+          </div>
+          <div class="stat-icon green">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          </div>
+        </div>
+        <?php endif; ?>
 
         <!-- Pending Orders -->
         <div class="stat-card">

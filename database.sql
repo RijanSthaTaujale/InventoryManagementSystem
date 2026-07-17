@@ -127,6 +127,7 @@ CREATE TABLE IF NOT EXISTS `product_variants` (
   `sku_suffix` VARCHAR(30)  DEFAULT NULL,
   `sell_price` DECIMAL(10,2) NOT NULL DEFAULT 0,
   `buy_price`  DECIMAL(10,2) NOT NULL DEFAULT 0,
+  `remarks`    TEXT          DEFAULT NULL,
   `qty_adj`    INT           NOT NULL DEFAULT 0,
   `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (`product_id`) REFERENCES `products`(`id`) ON DELETE CASCADE,

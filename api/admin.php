@@ -114,4 +114,31 @@ if ($action === 'add_courier' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
+// ── EDIT COURIER ─────────────────────────────────────────────
+if ($action === 'edit_courier' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $body   = json_decode(file_get_contents('php://input'), true);
+    $id     = (int)($body['id']     ?? 0);
+    $name   = trim($body['name']    ?? '');
+    $status = trim($body['status']  ?? 'active');
+
+    if (!$id || !$name) { echo json_encode(['success'=>false,'message'=>'Invalid data']); exit; }
+    if (!in_array($status, ['active','inactive'], true)) { $status = 'active'; }
+
+    $pdo->prepare("UPDATE couriers SET name=?, status=? WHERE id=?")->execute([$name, $status, $id]);
+    echo json_encode(['success'=>true]);
+    exit;
+}
+
+// ── DELETE COURIER ───────────────────────────────────────────
+if ($action === 'delete_courier' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $body = json_decode(file_get_contents('php://input'), true);
+    $id   = (int)($body['id'] ?? 0);
+
+    if (!$id) { echo json_encode(['success'=>false,'message'=>'Invalid courier']); exit; }
+
+    $pdo->prepare("DELETE FROM couriers WHERE id=?")->execute([$id]);
+    echo json_encode(['success'=>true]);
+    exit;
+}
+
 echo json_encode(['success'=>false,'message'=>'Invalid action']);
