@@ -112,6 +112,59 @@ function adjustOrderStock(PDO $pdo, int $orderDbId, string $adjType, int $direct
     }
 }
 
+// Restores stock for a specific qty of a single order item, records the
+// return against that line (returned_qty) and the order (order_returns +
+// a reduced subtotal/total), and logs it in the inventory log too. Shared
+// by the standalone per-item "Return" action and by the whole-order
+// "Returned" status change, so a line already partially returned is never
+// double-restocked no matter which path triggers the rest of it.
+function returnOrderItem(PDO $pdo, array $item, int $qty, int $userId, string $orderRef, ?string $reason): float {
+    $productId = (int)($item['product_id'] ?? 0);
+    $variantId = $item['variant_id'] !== null ? (int)$item['variant_id'] : null;
+
+    if ($productId) {
+        if ($variantId) {
+            $vRow = $pdo->prepare("SELECT qty_adj FROM product_variants WHERE id=? AND product_id=?");
+            $vRow->execute([$variantId, $productId]);
+            if ($vRow->fetch()) {
+                $pdo->prepare("UPDATE product_variants SET qty_adj = qty_adj + ? WHERE id=?")->execute([$qty, $variantId]);
+            }
+        }
+
+        $row = $pdo->prepare("SELECT quantity, min_stock_level FROM products WHERE id=?");
+        $row->execute([$productId]);
+        $product = $row->fetch();
+        if ($product) {
+            $qtyBefore = (int)$product['quantity'];
+            $min       = (int)$product['min_stock_level'];
+
+            if ($variantId) {
+                $sumStmt = $pdo->prepare("SELECT COALESCE(SUM(qty_adj),0) FROM product_variants WHERE product_id=?");
+                $sumStmt->execute([$productId]);
+                $qtyAfter = (int)$sumStmt->fetchColumn();
+            } else {
+                $qtyAfter = $qtyBefore + $qty;
+            }
+            $stockStatus = $qtyAfter <= 0 ? 'outofstock' : ($qtyAfter <= 2 ? 'critical' : ($qtyAfter <= $min ? 'lowstock' : 'instock'));
+
+            $pdo->prepare("UPDATE products SET quantity=?, stock_status=? WHERE id=?")->execute([$qtyAfter, $stockStatus, $productId]);
+            $pdo->prepare("INSERT INTO stock_adjustments (product_id,type,qty_before,qty_change,qty_after,reference,reason,adjusted_by) VALUES (?,'return',?,?,?,?,?,?)")
+                ->execute([$productId, $qtyBefore, $qty, $qtyAfter, $orderRef, $reason, $userId]);
+        }
+    }
+
+    $pdo->prepare("UPDATE order_items SET returned_qty = returned_qty + ? WHERE id=?")->execute([$qty, $item['id']]);
+
+    $amount = round($qty * (float)$item['sell_price'], 2);
+    $pdo->prepare("UPDATE orders SET subtotal = GREATEST(0, subtotal - ?), total = GREATEST(0, total - ?) WHERE id=?")
+        ->execute([$amount, $amount, $item['order_id']]);
+
+    $pdo->prepare("INSERT INTO order_returns (order_id,order_item_id,qty,amount,reason,returned_by) VALUES (?,?,?,?,?,?)")
+        ->execute([$item['order_id'], $item['id'], $qty, $amount, $reason, $userId]);
+
+    return $amount;
+}
+
 // ── CREATE ORDER ─────────────────────────────────────────────
 if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $body = json_decode(file_get_contents('php://input'), true);
@@ -256,7 +309,7 @@ if ($action === 'search' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     ");
     $stmt->execute([$like, $like, $like]);
     $orders = $stmt->fetchAll();
-    if (!$isAdmin) { foreach ($orders as &$o) unset($o['total']); }
+    if (!$isAdmin && !$isSuper) { foreach ($orders as &$o) unset($o['total']); }
     echo json_encode(['success' => true, 'orders' => $orders]);
     exit;
 }
@@ -471,9 +524,18 @@ if ($action === 'status' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->prepare("UPDATE orders SET stock_deducted=1 WHERE id=?")->execute([$order['id']]);
         }
 
-        // Stock restores once, at return time
+        // Stock restores once, at return time. Only the remaining un-returned
+        // qty on each line is restored, so this stays correct even if some
+        // items were already partially returned via the per-item Return action.
         if ($newStatus === 'returned' && !$order['stock_restored']) {
-            adjustOrderStock($pdo, $order['id'], 'return', 1, $user['id'], "Returned {$orderId}");
+            $returnItemsStmt = $pdo->prepare("SELECT * FROM order_items WHERE order_id=? AND product_id IS NOT NULL");
+            $returnItemsStmt->execute([$order['id']]);
+            foreach ($returnItemsStmt->fetchAll() as $ri) {
+                $remaining = (int)$ri['qty'] - (int)$ri['returned_qty'];
+                if ($remaining > 0) {
+                    returnOrderItem($pdo, $ri, $remaining, $user['id'], $orderId, 'Full order return');
+                }
+            }
             $pdo->prepare("UPDATE orders SET stock_restored=1 WHERE id=?")->execute([$order['id']]);
         }
 
@@ -482,6 +544,42 @@ if ($action === 'status' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     } catch (Exception $e) {
         $pdo->rollBack();
         echo json_encode(['success' => false, 'message' => 'Failed to update status.']);
+    }
+    exit;
+}
+
+// ── RETURN ORDER ITEM (partial or full line, admin + supervisor) ──
+if ($action === 'return_item' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!$isAdmin && !$isSuper) { echo json_encode(['success' => false, 'message' => 'Unauthorized']); exit; }
+
+    $body   = json_decode(file_get_contents('php://input'), true);
+    $itemId = (int)($body['item_id'] ?? 0);
+    $qty    = (int)($body['qty']     ?? 0);
+    $reason = trim($body['reason']   ?? '');
+
+    if (!$itemId || $qty < 1) { echo json_encode(['success' => false, 'message' => 'Invalid data']); exit; }
+
+    $stmt = $pdo->prepare("
+        SELECT oi.*, o.order_id AS order_ref, o.stock_deducted
+        FROM order_items oi JOIN orders o ON o.id = oi.order_id
+        WHERE oi.id = ?
+    ");
+    $stmt->execute([$itemId]);
+    $item = $stmt->fetch();
+    if (!$item) { echo json_encode(['success' => false, 'message' => 'Order item not found']); exit; }
+    if (!$item['stock_deducted']) { echo json_encode(['success' => false, 'message' => 'This order has not been dispatched yet — nothing to return.']); exit; }
+
+    $remaining = (int)$item['qty'] - (int)$item['returned_qty'];
+    if ($qty > $remaining) { echo json_encode(['success' => false, 'message' => "Only $remaining unit(s) left to return."]); exit; }
+
+    $pdo->beginTransaction();
+    try {
+        $amount = returnOrderItem($pdo, $item, $qty, $user['id'], $item['order_ref'], $reason ?: null);
+        $pdo->commit();
+        echo json_encode(['success' => true, 'amount' => $amount]);
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        echo json_encode(['success' => false, 'message' => 'Failed to process return.']);
     }
     exit;
 }
@@ -654,7 +752,7 @@ if ($action === 'export_csv' && $_SERVER['REQUEST_METHOD'] === 'GET') {
 }
 
 // ── UPDATE PAYMENT STATUS ────────────────────────────────────
-if ($action === 'payment' && $isAdmin && $_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($action === 'payment' && ($isAdmin || $isSuper) && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $body           = json_decode(file_get_contents('php://input'), true);
     $orderId        = trim($body['order_id']        ?? '');
     $payment_status = trim($body['payment_status']  ?? '');

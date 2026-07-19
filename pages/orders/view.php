@@ -38,6 +38,10 @@ $itemsStmt = $pdo->prepare("
 $itemsStmt->execute([$order['id']]);
 $items = $itemsStmt->fetchAll();
 
+$returnedStmt = $pdo->prepare("SELECT COALESCE(SUM(amount),0) FROM order_returns WHERE order_id=?");
+$returnedStmt->execute([$order['id']]);
+$totalReturned = (float)$returnedStmt->fetchColumn();
+
 // Status log
 $logStmt = $pdo->prepare("
     SELECT osl.*, u.name AS changed_by_name
@@ -169,11 +173,14 @@ include __DIR__ . '/../../components/head.php';
                     <th style="width:60px">Qty</th>
                     <th style="width:110px">Unit Price</th>
                     <th style="width:110px">Total</th>
-                    <?php if ($isAdmin): ?><th style="width:100px">Buy Price</th><?php endif; ?>
+                    <?php if ($isAdmin || $isSuper): ?><th style="width:100px">Buy Price</th><?php endif; ?>
+                    <?php if (($isAdmin || $isSuper) && $order['stock_deducted']): ?><th style="width:90px"></th><?php endif; ?>
                   </tr>
                 </thead>
                 <tbody>
-                  <?php foreach ($items as $item): ?>
+                  <?php foreach ($items as $item):
+                    $remainingQty = (int)$item['qty'] - (int)$item['returned_qty'];
+                  ?>
                   <tr>
                     <td>
                       <div style="display:flex;align-items:center;gap:10px">
@@ -192,14 +199,25 @@ include __DIR__ . '/../../components/head.php';
                           <?php if ($item['pid']): ?>
                           <div style="font-size:.72rem;color:var(--text-muted)"><?= e($item['pid']) ?></div>
                           <?php endif; ?>
+                          <?php if ($item['returned_qty'] > 0): ?>
+                          <div style="font-size:.68rem;font-weight:700;color:#f97316;margin-top:2px">&#8617; <?= (int)$item['returned_qty'] ?> returned</div>
+                          <?php endif; ?>
                         </div>
                       </div>
                     </td>
                     <td style="font-weight:700;text-align:center"><?= $item['qty'] ?></td>
                     <td><?= $currency ?> <?= number_format($item['sell_price'], 0) ?></td>
                     <td style="font-weight:600"><?= $currency ?> <?= number_format($item['total'], 0) ?></td>
-                    <?php if ($isAdmin): ?>
+                    <?php if ($isAdmin || $isSuper): ?>
                     <td class="text-muted"><?= $currency ?> <?= number_format($item['buy_price'], 0) ?></td>
+                    <?php endif; ?>
+                    <?php if (($isAdmin || $isSuper) && $order['stock_deducted']): ?>
+                    <td>
+                      <?php if ($remainingQty > 0): ?>
+                      <button class="btn btn-outline btn-xs"
+                              onclick="openReturnModal(<?= (int)$item['id'] ?>, <?= htmlspecialchars(json_encode($item['product_name']), ENT_QUOTES) ?>, <?= $remainingQty ?>)">Return</button>
+                      <?php endif; ?>
+                    </td>
                     <?php endif; ?>
                   </tr>
                   <?php endforeach; ?>
@@ -229,11 +247,16 @@ include __DIR__ . '/../../components/head.php';
                 <span>Total</span>
                 <span style="color:var(--primary)"><?= $currency ?> <?= number_format($order['total'], 0) ?></span>
               </div>
-              <?php if ($isAdmin): ?>
+              <?php if ($totalReturned > 0): ?>
+              <div style="display:flex;justify-content:space-between;font-size:.76rem;color:#f97316;margin-top:-2px">
+                <span>&#8617; <?= $currency ?> <?= number_format($totalReturned, 0) ?> already deducted for return(s)</span>
+              </div>
+              <?php endif; ?>
+              <?php if ($isAdmin || $isSuper): ?>
               <div style="display:flex;justify-content:space-between;font-size:.8rem;color:var(--text-muted);margin-top:2px">
                 <span>Profit (est.)</span>
                 <?php
-                $cost   = array_sum(array_map(fn($i) => $i['buy_price'] * $i['qty'], $items));
+                $cost   = array_sum(array_map(fn($i) => $i['buy_price'] * ($i['qty'] - $i['returned_qty']), $items));
                 $profit = $order['total'] - $cost - $order['shipping_cost'];
                 ?>
                 <span style="color:<?= $profit >= 0 ? '#22c55e' : '#ef4444' ?>;font-weight:600"><?= $currency ?> <?= number_format($profit, 0) ?></span>
@@ -362,8 +385,8 @@ include __DIR__ . '/../../components/head.php';
           </div>
           <?php endif; ?>
 
-          <!-- Admin: quick payment update -->
-          <?php if ($isAdmin): ?>
+          <!-- Admin/Supervisor: quick payment update -->
+          <?php if ($isAdmin || $isSuper): ?>
           <div class="card">
             <div style="font-size:.76rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Update Payment</div>
             <div style="display:flex;gap:6px">
@@ -396,6 +419,28 @@ include __DIR__ . '/../../components/head.php';
     <div style="display:flex;gap:10px;justify-content:flex-end">
       <button class="btn btn-outline btn-sm" onclick="document.getElementById('statusModal').style.display='none'">Cancel</button>
       <button class="btn btn-primary btn-sm" id="modalConfirmBtn">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- Return item modal -->
+<div id="returnModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:var(--radius-xl);padding:28px;max-width:380px;width:90%;box-shadow:var(--shadow-md)">
+    <div style="font-size:1.05rem;font-weight:700;margin-bottom:4px">Return Item</div>
+    <div style="font-size:.84rem;color:var(--text-secondary);margin-bottom:18px" id="returnItemName"></div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div class="form-group">
+        <label class="form-label" id="returnQtyLabel">Quantity to Return</label>
+        <input type="number" id="returnQty" class="form-control" min="1" value="1">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Reason</label>
+        <input type="text" id="returnReason" class="form-control" placeholder="e.g. Customer kept only 1 of 2 items">
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('returnModal').style.display='none'">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="submitReturn()">Confirm Return</button>
     </div>
   </div>
 </div>
@@ -444,7 +489,7 @@ function changeStatus(newStatus) {
   });
 }
 
-<?php if ($isAdmin): ?>
+<?php if ($isAdmin || $isSuper): ?>
 async function updatePayment(status) {
   const r = await fetch(`${APP_URL}/api/orders.php?action=payment`, {
     method: 'POST', headers: {'Content-Type':'application/json'},
@@ -452,6 +497,33 @@ async function updatePayment(status) {
   });
   const d = await r.json();
   if (d.success) { showToast('Payment updated', 'success'); setTimeout(() => location.reload(), 700); }
+  else showToast(d.message || 'Failed', 'error');
+}
+
+let returnItemId = null;
+
+function openReturnModal(itemId, name, maxQty) {
+  returnItemId = itemId;
+  document.getElementById('returnItemName').textContent = name;
+  document.getElementById('returnQtyLabel').textContent = `Quantity to Return (max ${maxQty})`;
+  document.getElementById('returnQty').max = maxQty;
+  document.getElementById('returnQty').value = maxQty;
+  document.getElementById('returnReason').value = '';
+  document.getElementById('returnModal').style.display = 'flex';
+}
+
+async function submitReturn() {
+  const qty    = parseInt(document.getElementById('returnQty').value) || 0;
+  const reason = document.getElementById('returnReason').value.trim();
+  if (qty < 1) { showToast('Enter a valid quantity', 'error'); return; }
+
+  const r = await fetch(`${APP_URL}/api/orders.php?action=return_item`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ item_id: returnItemId, qty, reason })
+  });
+  const d = await r.json();
+  document.getElementById('returnModal').style.display = 'none';
+  if (d.success) { showToast('Return processed', 'success'); setTimeout(() => location.reload(), 700); }
   else showToast(d.message || 'Failed', 'error');
 }
 <?php endif; ?>

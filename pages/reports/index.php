@@ -44,15 +44,17 @@ $stmt->execute([$dFrom,$dTo]); $completedOrders = (int)$stmt->fetchColumn();
 
 // Revenue (admin only). Dispatch-based, not creation-based — revenue only
 // actually counts once an order ships, matching the Dashboard's Total Revenue.
+// Excludes shipping_cost — that's a customer-paid pass-through for the
+// courier, not actual sales revenue.
 $totalRevenue = $todayRevenue = $avgOrder = 0;
 if ($isAdmin) {
-    $stmt = $pdo->prepare("SELECT COUNT(*) AS cnt, COALESCE(SUM(total),0) AS revenue FROM orders WHERE dispatched_at BETWEEN ? AND ?");
+    $stmt = $pdo->prepare("SELECT COUNT(*) AS cnt, COALESCE(SUM(total - shipping_cost),0) AS revenue FROM orders WHERE dispatched_at BETWEEN ? AND ?");
     $stmt->execute([$dFrom,$dTo]);
     $dispatchedRow = $stmt->fetch();
     $totalRevenue = (float)$dispatchedRow['revenue'];
     $dispatchedOrdersInRange = (int)$dispatchedRow['cnt'];
 
-    $stmt = $pdo->prepare("SELECT COALESCE(SUM(total),0) FROM orders WHERE DATE(dispatched_at)=CURDATE()");
+    $stmt = $pdo->prepare("SELECT COALESCE(SUM(total - shipping_cost),0) FROM orders WHERE DATE(dispatched_at)=CURDATE()");
     $stmt->execute(); $todayRevenue = (float)$stmt->fetchColumn();
 
     $avgOrder = $dispatchedOrdersInRange > 0 ? $totalRevenue / $dispatchedOrdersInRange : 0;
@@ -74,7 +76,7 @@ $salesByDay = $salesByDay->fetchAll();
 
 // ── Dispatched by day (reference line for chart + revenue source) ──
 $dispatchedByDayStmt = $pdo->prepare("
-    SELECT DATE(dispatched_at) AS day, COUNT(*) AS dispatched, COALESCE(SUM(total),0) AS revenue
+    SELECT DATE(dispatched_at) AS day, COUNT(*) AS dispatched, COALESCE(SUM(total - shipping_cost),0) AS revenue
     FROM orders
     WHERE dispatched_at IS NOT NULL AND dispatched_at BETWEEN ? AND ?
     GROUP BY DATE(dispatched_at)

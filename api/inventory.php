@@ -9,7 +9,7 @@ $user    = currentUser();
 $isAdmin = $user['role'] === 'admin';
 $isAdminOrSupervisor = in_array($user['role'], ['admin', 'supervisor'], true);
 
-if ($action === 'adjust' && $isAdmin && $_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($action === 'adjust' && $isAdminOrSupervisor && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $body       = json_decode(file_get_contents('php://input'), true);
     $product_id = (int)($body['product_id'] ?? 0);
     $type       = trim($body['type']        ?? 'add');

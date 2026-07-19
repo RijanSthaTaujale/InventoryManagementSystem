@@ -19,7 +19,8 @@ $courier    = trim($_GET['courier'] ?? '');
 $page       = max(1, (int)($_GET['page'] ?? 1));
 $perPage    = 15;
 
-$validStatuses = ['new','confirmed','pending','cancelled','dispatched','in_courier','delivered','returned'];
+$validStatuses    = ['new','confirmed','pending','cancelled','dispatched','in_courier','delivered','returned'];
+$editableStatuses = ['new','pending','confirmed'];
 
 $where  = ['1=1'];
 $params = [];
@@ -96,10 +97,11 @@ foreach ($validStatuses as $s) {
 }
 $statusCounts['all'] = (int)$pdo->query("SELECT COUNT(*) FROM orders")->fetchColumn();
 
-// Revenue total (admin only)
+// Revenue total (admin + supervisor). Excludes shipping_cost — that's a
+// customer-paid pass-through for the courier, not actual sales revenue.
 $totalRevenue = 0;
-if ($isAdmin) {
-    $rev = $pdo->prepare("SELECT COALESCE(SUM(total),0) FROM orders o $whereSQL");
+if ($isAdmin || $isSuper) {
+    $rev = $pdo->prepare("SELECT COALESCE(SUM(total - shipping_cost),0) FROM orders o $whereSQL");
     $rev->execute($params);
     $totalRevenue = (float)$rev->fetchColumn();
 }
@@ -158,7 +160,7 @@ include __DIR__ . '/../../components/head.php';
           <h1 style="font-size:1.25rem;font-weight:700">Orders Management</h1>
           <p style="font-size:.82rem;color:var(--text-secondary);margin-top:2px">
             <?= number_format($total) ?> order<?= $total!=1?'s':'' ?> found
-            <?php if ($isAdmin && $totalRevenue > 0): ?>
+            <?php if (($isAdmin || $isSuper) && $totalRevenue > 0): ?>
             &nbsp;·&nbsp; Total: <strong><?= $currency ?> <?= number_format($totalRevenue,0) ?></strong>
             <?php endif; ?>
           </p>
@@ -266,7 +268,7 @@ include __DIR__ . '/../../components/head.php';
               <th>Order ID</th>
               <th>Customer</th>
               <th>Product</th>
-              <?php if ($isAdmin): ?><th>Total</th><?php endif; ?>
+              <?php if ($isAdmin || $isSuper): ?><th>Total</th><?php endif; ?>
               <th>Status</th>
               <th>Page</th>
               <th>Date</th>
@@ -305,7 +307,7 @@ include __DIR__ . '/../../components/head.php';
                 <?php endif; ?>
               </td>
               <td class="text-muted" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="<?= e($o['product_names'] ?? '') ?>"><?= e($o['product_names'] ?? '—') ?></td>
-              <?php if ($isAdmin): ?>
+              <?php if ($isAdmin || $isSuper): ?>
               <td style="font-weight:600"><?= $currency ?> <?= number_format($o['total'],0) ?></td>
               <?php endif; ?>
               <td>
@@ -325,7 +327,12 @@ include __DIR__ . '/../../components/head.php';
                 <div style="font-size:.72rem;color:var(--text-muted)"><?= date('h:i A', strtotime($o['created_at'])) ?></div>
               </td>
               <td>
-                <a href="<?= APP_URL ?>/pages/orders/view.php?id=<?= urlencode($o['order_id']) ?>" class="btn btn-outline btn-xs">View</a>
+                <div style="display:flex;gap:5px">
+                  <a href="<?= APP_URL ?>/pages/orders/view.php?id=<?= urlencode($o['order_id']) ?>" class="btn btn-outline btn-xs">View</a>
+                  <?php if (in_array($o['status'], $editableStatuses, true)): ?>
+                  <a href="<?= APP_URL ?>/pages/orders/create.php?edit=<?= urlencode($o['order_id']) ?>" class="btn btn-outline btn-xs">Edit</a>
+                  <?php endif; ?>
+                </div>
               </td>
             </tr>
             <?php endforeach; ?>

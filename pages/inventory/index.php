@@ -7,6 +7,7 @@ $activePage = 'inventory';
 $pageTitle  = 'Inventory';
 $user       = currentUser();
 $isAdmin    = $user['role'] === 'admin';
+$isAdminOrSupervisor = in_array($user['role'], ['admin', 'supervisor'], true);
 $currency   = 'Rs';
 
 $search      = trim($_GET['search']   ?? '');
@@ -103,13 +104,13 @@ include __DIR__ . '/../../components/head.php';
       <div class="flex-between mb-4">
         <div>
           <h1 style="font-size:1.25rem;font-weight:700">
-            <?= $isAdmin ? 'Stock Management & Updates' : 'Stock Monitoring' ?>
+            <?= $isAdminOrSupervisor ? 'Stock Management & Updates' : 'Stock Monitoring' ?>
           </h1>
           <p style="font-size:.82rem;color:var(--text-secondary);margin-top:2px">
-            <?= $isAdmin ? 'Manage and adjust stock levels across all products' : 'Monitor stock levels and get low stock alerts' ?>
+            <?= $isAdminOrSupervisor ? 'Manage and adjust stock levels across all products' : 'Monitor stock levels and get low stock alerts' ?>
           </p>
         </div>
-        <?php if ($isAdmin): ?>
+        <?php if ($isAdminOrSupervisor): ?>
         <button class="btn btn-primary" onclick="openAdjModal()">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Add Stock
@@ -213,7 +214,7 @@ include __DIR__ . '/../../components/head.php';
                   <th>Status</th>
                   <th>Last Adjusted</th>
                   <th>Log</th>
-                  <?php if ($isAdmin): ?><th>Action</th><?php endif; ?>
+                  <?php if ($isAdminOrSupervisor): ?><th>Action</th><?php endif; ?>
                 </tr>
               </thead>
               <tbody>
@@ -261,9 +262,9 @@ include __DIR__ . '/../../components/head.php';
                   <td>
                     <a href="<?= APP_URL ?>/pages/inventory/log.php?product_id=<?= $p['id'] ?>" class="btn btn-outline btn-xs">Log</a>
                   </td>
-                  <?php if ($isAdmin): ?>
+                  <?php if ($isAdminOrSupervisor): ?>
                   <td>
-                    <button onclick="openAdjModal(<?= $p['id'] ?>, <?= json_encode($p['name']) ?>, <?= $p['quantity'] ?>)"
+                    <button onclick="openAdjModal(<?= $p['id'] ?>, <?= htmlspecialchars(json_encode($p['name']), ENT_QUOTES) ?>, <?= $p['quantity'] ?>)"
                             class="btn btn-outline btn-xs">Adjust</button>
                   </td>
                   <?php endif; ?>
@@ -318,8 +319,8 @@ include __DIR__ . '/../../components/head.php';
   </div>
 </div>
 
-<!-- Stock Adjustment Modal (admin) -->
-<?php if ($isAdmin): ?>
+<!-- Stock Adjustment Modal (admin/supervisor) -->
+<?php if ($isAdminOrSupervisor): ?>
 <div id="adjModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:var(--radius-xl);padding:28px;max-width:420px;width:90%;box-shadow:var(--shadow-md)">
     <div style="font-size:1.05rem;font-weight:700;margin-bottom:4px">Stock Adjustment</div>
@@ -433,7 +434,7 @@ async function submitAdj() {
   else showToast(d.message||'Failed','error');
 }
 
-<?php if ($isAdmin && !empty($_GET['adjust'])):
+<?php if ($isAdminOrSupervisor && !empty($_GET['adjust'])):
     $adjustId = (int)$_GET['adjust'];
     $adjustProduct = null;
     foreach ($products as $pr) {

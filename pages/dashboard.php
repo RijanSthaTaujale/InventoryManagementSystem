@@ -17,8 +17,9 @@ $totalOrders = (int)$pdo->query("SELECT COUNT(*) FROM orders")->fetchColumn();
 // New orders (today)
 $newOrdersToday = (int)$pdo->query("SELECT COUNT(*) FROM orders WHERE DATE(created_at)=CURDATE()")->fetchColumn();
 
-// Dispatched today (count + revenue)
-$dispatchedTodayStmt = $pdo->query("SELECT COUNT(*) AS cnt, COALESCE(SUM(total),0) AS revenue FROM orders WHERE DATE(dispatched_at)=CURDATE()");
+// Dispatched today (count + revenue). Revenue excludes shipping_cost — that's
+// a pass-through to cover the courier, not actual sales revenue.
+$dispatchedTodayStmt = $pdo->query("SELECT COUNT(*) AS cnt, COALESCE(SUM(total - shipping_cost),0) AS revenue FROM orders WHERE DATE(dispatched_at)=CURDATE()");
 $dispatchedTodayRow = $dispatchedTodayStmt->fetch(PDO::FETCH_ASSOC);
 $dispatchedTodayCount   = (int)($dispatchedTodayRow['cnt'] ?? 0);
 $dispatchedTodayRevenue = (float)($dispatchedTodayRow['revenue'] ?? 0);
@@ -35,10 +36,10 @@ $lowStock = (int)$pdo->query("SELECT COUNT(*) FROM products WHERE stock_status I
 // Revenue (admin only). Dispatch-based, not creation-based — stock/revenue
 // only actually move at dispatch, so a new order placed today with nothing
 // shipped yet shouldn't count. Today's figure reuses $dispatchedTodayRevenue,
-// computed above alongside the Dispatched Today stat.
+// computed above alongside the Dispatched Today stat. Excludes shipping_cost.
 $totalRevenue = 0;
 if ($isAdmin) {
-  $totalRevenue = (float)$pdo->query("SELECT COALESCE(SUM(total),0) FROM orders WHERE dispatched_at IS NOT NULL")->fetchColumn();
+  $totalRevenue = (float)$pdo->query("SELECT COALESCE(SUM(total - shipping_cost),0) FROM orders WHERE dispatched_at IS NOT NULL")->fetchColumn();
 }
 
 // ── Dispatched by day (admin only, date-range filterable, defaults to current month) ──
@@ -48,7 +49,7 @@ if ($isAdmin) {
   $dispTo   = $_GET['disp_to']   ?? date('Y-m-d');
 
   $dispStmt = $pdo->prepare("
-    SELECT DATE(dispatched_at) AS day, COUNT(*) AS cnt, COALESCE(SUM(total),0) AS revenue
+    SELECT DATE(dispatched_at) AS day, COUNT(*) AS cnt, COALESCE(SUM(total - shipping_cost),0) AS revenue
     FROM orders
     WHERE dispatched_at IS NOT NULL AND DATE(dispatched_at) BETWEEN ? AND ?
     GROUP BY DATE(dispatched_at)
