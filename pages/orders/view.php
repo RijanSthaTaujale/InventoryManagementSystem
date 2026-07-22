@@ -173,7 +173,7 @@ include __DIR__ . '/../../components/head.php';
                     <th style="width:60px">Qty</th>
                     <th style="width:110px">Unit Price</th>
                     <th style="width:110px">Total</th>
-                    <?php if ($isAdmin || $isSuper): ?><th style="width:100px">Buy Price</th><?php endif; ?>
+                    <?php if ($isAdmin): ?><th style="width:100px">Buy Price</th><?php endif; ?>
                     <?php if (($isAdmin || $isSuper) && $order['stock_deducted']): ?><th style="width:90px"></th><?php endif; ?>
                   </tr>
                 </thead>
@@ -208,7 +208,7 @@ include __DIR__ . '/../../components/head.php';
                     <td style="font-weight:700;text-align:center"><?= $item['qty'] ?></td>
                     <td><?= $currency ?> <?= number_format($item['sell_price'], 0) ?></td>
                     <td style="font-weight:600"><?= $currency ?> <?= number_format($item['total'], 0) ?></td>
-                    <?php if ($isAdmin || $isSuper): ?>
+                    <?php if ($isAdmin): ?>
                     <td class="text-muted"><?= $currency ?> <?= number_format($item['buy_price'], 0) ?></td>
                     <?php endif; ?>
                     <?php if (($isAdmin || $isSuper) && $order['stock_deducted']): ?>
@@ -252,7 +252,7 @@ include __DIR__ . '/../../components/head.php';
                 <span>&#8617; <?= $currency ?> <?= number_format($totalReturned, 0) ?> already deducted for return(s)</span>
               </div>
               <?php endif; ?>
-              <?php if ($isAdmin || $isSuper): ?>
+              <?php if ($isAdmin): ?>
               <div style="display:flex;justify-content:space-between;font-size:.8rem;color:var(--text-muted);margin-top:2px">
                 <span>Profit (est.)</span>
                 <?php
