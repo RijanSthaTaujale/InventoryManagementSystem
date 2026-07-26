@@ -15,7 +15,7 @@ $appUrl      = ($docRoot !== '' && stripos($projectRoot, $docRoot) === 0)
 define('APP_URL', $appUrl);
 unset($projectRoot, $docRoot, $appUrl);
 
-define('APP_NAME', 'Inventory Pro');
+define('APP_NAME', 'Pompoy Inventory');
 
 session_start();
 

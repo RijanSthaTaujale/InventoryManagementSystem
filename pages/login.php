@@ -3,16 +3,16 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Sign In — Inventory Pro</title>
+<title>Sign In — <?= APP_NAME ?></title>
+<link rel="icon" type="image/jpeg" href="<?= APP_URL ?>/assets/images/pompoy-favicon.jpeg"/>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="<?= APP_URL ?>/assets/css/global.css"/>
 <style>
 body{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#f1f5f9;padding:24px 16px;margin:0}
 .auth-card{background:#fff;border-radius:20px;padding:40px 36px 32px;box-shadow:0 8px 40px rgba(0,0,0,.10);width:100%;max-width:400px}
-.auth-logo{width:52px;height:52px;border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 18px;transition:background .25s}
-.auth-logo.staff{background:#3B5BDB}
-.auth-logo.admin{background:linear-gradient(135deg,#7c3aed,#db2777)}
+.auth-logo{width:96px;margin:0 auto 14px;display:flex;align-items:center;justify-content:center}
+.auth-logo img{width:100%;height:auto;display:block}
 .auth-heading{text-align:center;margin-bottom:22px}
 .auth-heading h1{font-size:1.6rem;font-weight:700;color:#0f172a;letter-spacing:-.3px}
 .auth-heading p{font-size:.9rem;color:#64748b;margin-top:4px}
@@ -43,14 +43,12 @@ body{display:flex;align-items:center;justify-content:center;min-height:100vh;bac
 </head>
 <body>
 <div class="auth-card">
-  <div class="auth-logo staff" id="authLogo">
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" id="logoIcon">
-      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
-    </svg>
+  <div class="auth-logo">
+    <img src="<?= APP_URL ?>/assets/images/pompoy-logo-login.jpeg" alt="Pompoy"/>
   </div>
   <div class="auth-heading">
     <h1>Welcome Back!</h1>
-    <p>Sign in to continue to Inventory Pro</p>
+    <p>Sign in to continue to <?= APP_NAME ?></p>
   </div>
 
   <!-- Role tabs -->
@@ -97,7 +95,6 @@ body{display:flex;align-items:center;justify-content:center;min-height:100vh;bac
 <script>
 const APP_URL = '<?= APP_URL ?>';
 let role = 'staff';
-const logo    = document.getElementById('authLogo');
 const tabS    = document.getElementById('tabStaff');
 const tabA    = document.getElementById('tabAdmin');
 const loginBtn= document.getElementById('loginBtn');
@@ -110,10 +107,6 @@ function setRole(r) {
   role = r;
   tabS.className = 'role-tab' + (r === 'staff' ? ' active-staff' : '');
   tabA.className = 'role-tab' + (r === 'admin' ? ' active-admin' : '');
-  logo.className = 'auth-logo ' + (r === 'admin' ? 'admin' : 'staff');
-  document.getElementById('logoIcon').innerHTML = r === 'admin'
-    ? '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'
-    : '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>';
   loginBtn.className = 'btn-signin ' + (r === 'admin' ? 'admin-mode' : 'staff-mode');
   emailEl.className  = 'f-input' + (r === 'admin' ? ' admin-mode' : '');
   passEl.className   = 'f-input' + (r === 'admin' ? ' admin-mode' : '');
