@@ -141,4 +141,84 @@ if ($action === 'delete_courier' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
+// ── ADD SHIPPING METHOD ───────────────────────────────────────
+if ($action === 'add_shipping_method' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $body = json_decode(file_get_contents('php://input'), true);
+    $name = trim($body['name'] ?? '');
+    $cost = (float)($body['cost'] ?? 0);
+
+    if (!$name) { echo json_encode(['success'=>false,'message'=>'Name is required']); exit; }
+
+    $pdo->prepare("INSERT INTO shipping_methods (name, cost, created_by) VALUES (?,?,?)")->execute([$name, $cost, $currentUser['id']]);
+    echo json_encode(['success'=>true, 'id'=>$pdo->lastInsertId(), 'name'=>$name, 'cost'=>$cost]);
+    exit;
+}
+
+// ── EDIT SHIPPING METHOD ──────────────────────────────────────
+if ($action === 'edit_shipping_method' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $body   = json_decode(file_get_contents('php://input'), true);
+    $id     = (int)($body['id']     ?? 0);
+    $name   = trim($body['name']    ?? '');
+    $cost   = (float)($body['cost'] ?? 0);
+    $status = trim($body['status']  ?? 'active');
+
+    if (!$id || !$name) { echo json_encode(['success'=>false,'message'=>'Invalid data']); exit; }
+    if (!in_array($status, ['active','inactive'], true)) { $status = 'active'; }
+
+    $pdo->prepare("UPDATE shipping_methods SET name=?, cost=?, status=? WHERE id=?")->execute([$name, $cost, $status, $id]);
+    echo json_encode(['success'=>true]);
+    exit;
+}
+
+// ── DELETE SHIPPING METHOD ────────────────────────────────────
+if ($action === 'delete_shipping_method' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $body = json_decode(file_get_contents('php://input'), true);
+    $id   = (int)($body['id'] ?? 0);
+
+    if (!$id) { echo json_encode(['success'=>false,'message'=>'Invalid shipping method']); exit; }
+
+    $pdo->prepare("DELETE FROM shipping_methods WHERE id=?")->execute([$id]);
+    echo json_encode(['success'=>true]);
+    exit;
+}
+
+// ── ADD PAYMENT METHOD ────────────────────────────────────────
+if ($action === 'add_payment_method' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $body = json_decode(file_get_contents('php://input'), true);
+    $name = trim($body['name'] ?? '');
+
+    if (!$name) { echo json_encode(['success'=>false,'message'=>'Name is required']); exit; }
+
+    $pdo->prepare("INSERT INTO payment_methods (name, created_by) VALUES (?,?)")->execute([$name, $currentUser['id']]);
+    echo json_encode(['success'=>true, 'id'=>$pdo->lastInsertId(), 'name'=>$name]);
+    exit;
+}
+
+// ── EDIT PAYMENT METHOD ───────────────────────────────────────
+if ($action === 'edit_payment_method' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $body   = json_decode(file_get_contents('php://input'), true);
+    $id     = (int)($body['id']     ?? 0);
+    $name   = trim($body['name']    ?? '');
+    $status = trim($body['status']  ?? 'active');
+
+    if (!$id || !$name) { echo json_encode(['success'=>false,'message'=>'Invalid data']); exit; }
+    if (!in_array($status, ['active','inactive'], true)) { $status = 'active'; }
+
+    $pdo->prepare("UPDATE payment_methods SET name=?, status=? WHERE id=?")->execute([$name, $status, $id]);
+    echo json_encode(['success'=>true]);
+    exit;
+}
+
+// ── DELETE PAYMENT METHOD ─────────────────────────────────────
+if ($action === 'delete_payment_method' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $body = json_decode(file_get_contents('php://input'), true);
+    $id   = (int)($body['id'] ?? 0);
+
+    if (!$id) { echo json_encode(['success'=>false,'message'=>'Invalid payment method']); exit; }
+
+    $pdo->prepare("DELETE FROM payment_methods WHERE id=?")->execute([$id]);
+    echo json_encode(['success'=>true]);
+    exit;
+}
+
 echo json_encode(['success'=>false,'message'=>'Invalid action']);

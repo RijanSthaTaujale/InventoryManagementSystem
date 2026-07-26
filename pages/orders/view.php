@@ -65,7 +65,6 @@ $badgeMap = [
     'in_courier' => 'badge-in_courier',
 ];
 $badge    = $badgeMap[$order['status']] ?? 'badge-pending';
-$payBadge = $order['payment_status'] === 'paid' ? 'badge-confirmed' : ($order['payment_status'] === 'partial' ? 'badge-pending' : 'badge-cancelled');
 
 // What status changes are allowed per role?
 // Admin: everything
@@ -134,7 +133,6 @@ include __DIR__ . '/../../components/head.php';
           <div style="display:flex;align-items:center;gap:10px">
             <h1 style="font-size:1.25rem;font-weight:700"><?= e($order['order_id']) ?></h1>
             <span class="badge <?= $badge ?>"><?= ucfirst(str_replace('_', ' ', $order['status'])) ?></span>
-            <span class="badge <?= $payBadge ?>"><?= ucfirst($order['payment_status']) ?></span>
           </div>
           <p style="font-size:.82rem;color:var(--text-secondary);margin-top:2px">
             Placed <?= date('d M Y, h:i A', strtotime($order['created_at'])) ?>
@@ -346,10 +344,6 @@ include __DIR__ . '/../../components/head.php';
                 <span style="color:var(--text-secondary)">Payment</span>
                 <span style="font-weight:600"><?= e($order['payment_method'] ?? '—') ?></span>
               </div>
-              <div style="display:flex;justify-content:space-between;align-items:center">
-                <span style="color:var(--text-secondary)">Pay Status</span>
-                <span class="badge <?= $payBadge ?>"><?= ucfirst($order['payment_status']) ?></span>
-              </div>
               <?php if ($order['shipping_method']): ?>
               <div style="display:flex;justify-content:space-between">
                 <span style="color:var(--text-secondary)">Shipping</span>
@@ -385,20 +379,6 @@ include __DIR__ . '/../../components/head.php';
           </div>
           <?php endif; ?>
 
-          <!-- Admin/Supervisor: quick payment update -->
-          <?php if ($isAdmin || $isSuper): ?>
-          <div class="card">
-            <div style="font-size:.76rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Update Payment</div>
-            <div style="display:flex;gap:6px">
-              <?php foreach (['unpaid'=>'Unpaid','paid'=>'Paid','partial'=>'Partial','refunded'=>'Refunded'] as $ps=>$pl): ?>
-              <button onclick="updatePayment('<?= $ps ?>')"
-                      class="btn btn-xs <?= $order['payment_status']===$ps ? 'btn-primary' : 'btn-outline' ?>">
-                <?= $pl ?>
-              </button>
-              <?php endforeach; ?>
-            </div>
-          </div>
-          <?php endif; ?>
 
         </div>
       </div>
@@ -490,16 +470,6 @@ function changeStatus(newStatus) {
 }
 
 <?php if ($isAdmin || $isSuper): ?>
-async function updatePayment(status) {
-  const r = await fetch(`${APP_URL}/api/orders.php?action=payment`, {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ order_id: ORDER_ID, payment_status: status })
-  });
-  const d = await r.json();
-  if (d.success) { showToast('Payment updated', 'success'); setTimeout(() => location.reload(), 700); }
-  else showToast(d.message || 'Failed', 'error');
-}
-
 let returnItemId = null;
 
 function openReturnModal(itemId, name, maxQty) {

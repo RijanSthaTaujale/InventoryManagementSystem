@@ -125,6 +125,15 @@ $userInitial = strtoupper(substr($userName, 0, 1));
       Couriers
     </a>
 
+    <!-- Shipping & Payment Methods -->
+    <a href="<?= APP_URL ?>/pages/admin/order_methods.php"
+       class="nav-item <?= $activePage === 'order_methods' ? 'active' : '' ?>">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>
+      </svg>
+      Order Methods
+    </a>
+
     <?php endif; ?>
 
     <?php if ($role === 'admin' || $role === 'supervisor'): ?>

@@ -170,6 +170,25 @@ CREATE TABLE IF NOT EXISTS `couriers` (
   FOREIGN KEY (`created_by`) REFERENCES `users`(`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `shipping_methods` (
+  `id`         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `name`       VARCHAR(100)  NOT NULL,
+  `cost`       DECIMAL(10,2) NOT NULL DEFAULT 0,
+  `status`     ENUM('active','inactive') NOT NULL DEFAULT 'active',
+  `created_by` INT UNSIGNED  DEFAULT NULL,
+  `created_at` DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`created_by`) REFERENCES `users`(`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `payment_methods` (
+  `id`         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `name`       VARCHAR(100)  NOT NULL,
+  `status`     ENUM('active','inactive') NOT NULL DEFAULT 'active',
+  `created_by` INT UNSIGNED  DEFAULT NULL,
+  `created_at` DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`created_by`) REFERENCES `users`(`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `customer_blacklist` (
   `id`             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   `phone`          VARCHAR(20)   NOT NULL,
@@ -377,6 +396,20 @@ INSERT IGNORE INTO `categories` (`name`, `slug`, `sort_order`) VALUES
 ('Sports',        'sports',         6),
 ('Books',         'books',          7),
 ('Toys',          'toys',           8);
+
+-- Default shipping/payment methods
+INSERT IGNORE INTO `shipping_methods` (`name`, `cost`) VALUES
+('Standard Shipping (Rs 100)', 100),
+('Express Shipping (Rs 250)', 250),
+('Regional Logistics', 150),
+('Pickup', 0);
+
+INSERT IGNORE INTO `payment_methods` (`name`) VALUES
+('Cash on Delivery'),
+('eSewa'),
+('Khalti'),
+('Bank Transfer'),
+('Card');
 
 -- Default settings
 INSERT IGNORE INTO `settings` (`key`, `value`) VALUES

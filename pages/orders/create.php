@@ -41,8 +41,10 @@ if (!$isEditMode) {
     $nextId = 'ORD-' . date('Y') . '-' . str_pad($num, 5, '0', STR_PAD_LEFT);
 }
 
-$fbPages  = $pdo->query("SELECT id, name FROM fb_pages WHERE status='active' ORDER BY name")->fetchAll();
-$couriers = $pdo->query("SELECT id, name FROM couriers WHERE status='active' ORDER BY name")->fetchAll();
+$fbPages         = $pdo->query("SELECT id, name FROM fb_pages WHERE status='active' ORDER BY name")->fetchAll();
+$couriers        = $pdo->query("SELECT id, name FROM couriers WHERE status='active' ORDER BY name")->fetchAll();
+$shippingMethods = $pdo->query("SELECT id, name, cost FROM shipping_methods WHERE status='active' ORDER BY name")->fetchAll();
+$paymentMethods  = $pdo->query("SELECT id, name FROM payment_methods WHERE status='active' ORDER BY name")->fetchAll();
 
 include __DIR__ . '/../../components/head.php';
 ?>
@@ -159,20 +161,17 @@ include __DIR__ . '/../../components/head.php';
                   <label class="form-label">Shipping Method</label>
                   <select id="shippingMethod" class="form-control" onchange="recalc()">
                     <option value="">No shipping</option>
-                    <option value="Standard Shipping (Rs 100)" data-cost="100">Standard — Rs 100</option>
-                    <option value="Express Shipping (Rs 250)" data-cost="250">Express — Rs 250</option>
-                    <option value="Regional Logistics" data-cost="150">Regional — Rs 150</option>
-                    <option value="Pickup" data-cost="0">Pickup — Free</option>
+                    <?php foreach ($shippingMethods as $sm): ?>
+                    <option value="<?= e($sm['name']) ?>" data-cost="<?= $sm['cost'] ?>"><?= e($sm['name']) ?></option>
+                    <?php endforeach; ?>
                   </select>
                 </div>
                 <div class="form-group">
                   <label class="form-label">Payment Method</label>
                   <select id="paymentMethod" class="form-control">
-                    <option value="Cash on Delivery">Cash on Delivery</option>
-                    <option value="eSewa">eSewa</option>
-                    <option value="Khalti">Khalti</option>
-                    <option value="Bank Transfer">Bank Transfer</option>
-                    <option value="Card">Card</option>
+                    <?php foreach ($paymentMethods as $pm): ?>
+                    <option value="<?= e($pm['name']) ?>"><?= e($pm['name']) ?></option>
+                    <?php endforeach; ?>
                   </select>
                 </div>
               </div>
