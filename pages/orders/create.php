@@ -166,8 +166,13 @@ include __DIR__ . '/../../components/head.php';
                   </select>
                 </div>
                 <div class="form-group">
-                  <label class="form-label">Amount Paid</label>
-                  <input type="number" id="amountPaidInput" class="form-control" min="0" step="0.01" value="0" oninput="amountPaidTouched=true">
+                  <label class="form-label">&nbsp;</label>
+                  <div style="display:flex;align-items:center;gap:8px;height:38px">
+                    <input type="checkbox" id="prepaidCheckbox" style="width:16px;height:16px" onchange="togglePrepaid()">
+                    <label for="prepaidCheckbox" style="font-size:.88rem;font-weight:600;color:var(--text);margin:0;cursor:pointer">Prepaid</label>
+                  </div>
+                  <input type="number" id="amountPaidInput" class="form-control" min="0" step="0.01" value="0" disabled
+                         style="display:none;margin-top:6px" oninput="amountPaidTouched=true">
                 </div>
               </div>
               <div class="form-group">
@@ -458,9 +463,21 @@ function recalc() {
   document.getElementById('sumShipping').textContent  = `${CURRENCY} ${shipping.toLocaleString()}`;
   document.getElementById('sumTotal').textContent     = `${CURRENCY} ${total.toLocaleString()}`;
 
-  if (!amountPaidTouched) {
+  if (document.getElementById('prepaidCheckbox').checked && !amountPaidTouched) {
     document.getElementById('amountPaidInput').value = total.toFixed(2);
   }
+}
+
+// The Amount Paid field is only usable once Prepaid is checked — checking it
+// reveals the field pre-filled with the current total (overridable down to
+// any partial figure); unchecking hides it and resets to unpaid.
+function togglePrepaid() {
+  const checked = document.getElementById('prepaidCheckbox').checked;
+  const input   = document.getElementById('amountPaidInput');
+  input.disabled = !checked;
+  input.style.display = checked ? '' : 'none';
+  amountPaidTouched = false;
+  if (checked) { recalc(); } else { input.value = 0; }
 }
 
 // ── Blacklist check ──────────────────────────────────────────
@@ -578,7 +595,9 @@ async function submitOrder() {
     customer_phone:   custPhone,
     customer_address: custAddress,
     fb_page_id:       document.getElementById('fbPage').value || null,
-    amount_paid:      Math.max(0, parseFloat(document.getElementById('amountPaidInput').value) || 0),
+    amount_paid:      document.getElementById('prepaidCheckbox').checked
+                        ? Math.max(0, parseFloat(document.getElementById('amountPaidInput').value) || 0)
+                        : 0,
     shipping_method:  sel.value,
     shipping_cost:    shipping,
     courier_name:     document.getElementById('courierName').value.trim(),
@@ -623,8 +642,13 @@ if (IS_EDIT) {
   document.getElementById('custAddress').value = EDIT_ORDER.customer_address || '';
   if (EDIT_ORDER.fb_page_id) document.getElementById('fbPage').value = EDIT_ORDER.fb_page_id;
   if (EDIT_ORDER.shipping_method) document.getElementById('shippingMethod').value = EDIT_ORDER.shipping_method;
-  document.getElementById('amountPaidInput').value = EDIT_ORDER.amount_paid || 0;
-  amountPaidTouched = true; // it's a real saved value — don't let recalc() below overwrite it
+  if ((EDIT_ORDER.amount_paid || 0) > 0) {
+    document.getElementById('prepaidCheckbox').checked = true;
+    document.getElementById('amountPaidInput').disabled = false;
+    document.getElementById('amountPaidInput').style.display = '';
+    document.getElementById('amountPaidInput').value = EDIT_ORDER.amount_paid;
+    amountPaidTouched = true; // it's a real saved value — don't let recalc() below overwrite it
+  }
   if (EDIT_ORDER.courier_name) {
     const courierSel = document.getElementById('courierName');
     if (![...courierSel.options].some(o => o.value === EDIT_ORDER.courier_name)) {
