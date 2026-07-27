@@ -499,6 +499,12 @@ include __DIR__ . '/../../components/head.php';
         <label class="form-label">Reason</label>
         <input type="text" id="exchangeReason" class="form-control" placeholder="e.g. Wrong size, customer wants Large instead">
       </div>
+      <div class="form-group" style="display:flex;align-items:center;gap:8px;border-top:1px solid var(--border);padding-top:14px">
+        <input type="checkbox" id="exchangeAlreadyPaid" style="width:16px;height:16px">
+        <label for="exchangeAlreadyPaid" style="font-size:.85rem;color:var(--text-secondary);margin:0;cursor:pointer">
+          Customer already settled the price difference in person
+        </label>
+      </div>
     </div>
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
       <button class="btn btn-outline btn-sm" onclick="document.getElementById('exchangeModal').style.display='none'">Cancel</button>
@@ -595,6 +601,7 @@ function openExchangeModal(itemId, name, maxQty) {
   document.getElementById('exchangeNewQty').value = maxQty;
   document.getElementById('exchangeDamaged').checked = false;
   document.getElementById('exchangeReason').value = '';
+  document.getElementById('exchangeAlreadyPaid').checked = false;
   document.getElementById('exchangeSearch').value = '';
   document.getElementById('exchangeResults').innerHTML = '';
   document.getElementById('exchangeVariantGroup').style.display = 'none';
@@ -642,6 +649,7 @@ async function submitExchange() {
   const newQty  = parseInt(document.getElementById('exchangeNewQty').value) || 0;
   const damaged = document.getElementById('exchangeDamaged').checked;
   const reason  = document.getElementById('exchangeReason').value.trim();
+  const alreadyPaid = document.getElementById('exchangeAlreadyPaid').checked;
 
   if (qty < 1) { showToast('Enter a valid quantity to exchange', 'error'); return; }
   if (!exchangeSelectedProduct) { showToast('Pick a replacement product', 'error'); return; }
@@ -654,6 +662,7 @@ async function submitExchange() {
     method: 'POST', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({
       item_id: exchangeItemId, qty, damaged, reason,
+      already_paid: alreadyPaid,
       new_product_id: exchangeSelectedProduct.id,
       new_variant_id: newVariantId,
       new_qty: newQty,

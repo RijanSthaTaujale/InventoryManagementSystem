@@ -647,13 +647,19 @@ if ($action === 'exchange_item' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $newProductId   = (int)($body['new_product_id']  ?? 0);
     $newVariantId   = (int)($body['new_variant_id']  ?? 0) ?: null;
     $newQty         = (int)($body['new_qty']         ?? 0) ?: $qty;
+    // Whether the customer already settled the price difference in person
+    // (paid more for an upgrade, or was refunded for a downgrade) — if not,
+    // it's left for the courier to collect/adjust on redelivery.
+    $alreadyPaid    = !empty($body['already_paid']);
 
     if (!$itemId || $qty < 1 || !$newProductId || $newQty < 1) {
         echo json_encode(['success' => false, 'message' => 'Invalid data']); exit;
     }
 
     $stmt = $pdo->prepare("
-        SELECT oi.*, o.order_id AS order_ref, o.stock_deducted
+        SELECT oi.*, o.order_id AS order_ref, o.stock_deducted,
+               o.status AS order_status, o.payment_status AS order_payment_status,
+               o.amount_paid AS order_amount_paid, o.total AS order_total
         FROM order_items oi JOIN orders o ON o.id = oi.order_id
         WHERE oi.id = ?
     ");
@@ -721,6 +727,55 @@ if ($action === 'exchange_item' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         // effect is the price difference either way.
         $pdo->prepare("UPDATE orders SET subtotal = subtotal + ?, total = total + ? WHERE id=?")
             ->execute([$newTotal, $newTotal, $item['order_id']]);
+
+        // 5. Reconcile the payment ledger against the new total. If the
+        // customer already settled the difference in person, treat the order
+        // as fully paid now; otherwise leave amount_paid untouched and just
+        // re-derive paid/partial/unpaid so it's accurate again (the price
+        // change can push an already-'paid' order back into 'partial').
+        $totalStmt = $pdo->prepare("SELECT total FROM orders WHERE id=?");
+        $totalStmt->execute([$item['order_id']]);
+        $updatedTotal = (float)$totalStmt->fetchColumn();
+
+        if ($alreadyPaid) {
+            $newAmountPaid    = $updatedTotal;
+            $newPaymentStatus = 'paid';
+        } else {
+            $newAmountPaid = (float)$item['order_amount_paid'];
+            if ($newAmountPaid <= 0) {
+                $newPaymentStatus = 'unpaid';
+            } elseif ($newAmountPaid >= $updatedTotal) {
+                $newPaymentStatus = 'paid';
+            } else {
+                $newPaymentStatus = 'partial';
+            }
+        }
+        $newPaymentMethod = [
+            'unpaid'  => 'Cash on Delivery',
+            'partial' => 'Partial Payment',
+            'paid'    => 'Prepaid',
+        ][$newPaymentStatus];
+
+        // 6. A replacement item always needs its own physical shipment — if
+        // the order had already left the pipeline (or gone all the way to
+        // Delivered), kick it back to Confirmed so staff track the redelivery
+        // through Dispatched → In Courier → Delivered again instead of it
+        // silently staying "Delivered" for an item that hasn't shipped yet.
+        // stock_deducted is left as-is, since the replacement's stock was
+        // already deducted in step 2 — dispatching again won't double-deduct.
+        if (in_array($item['order_status'], ['dispatched', 'in_courier', 'delivered'], true)) {
+            $pdo->prepare("
+                UPDATE orders SET amount_paid=?, payment_status=?, payment_method=?, status='confirmed',
+                       dispatched_at=NULL, delivered_at=NULL, updated_by=?
+                WHERE id=?
+            ")->execute([$newAmountPaid, $newPaymentStatus, $newPaymentMethod, $user['id'], $item['order_id']]);
+
+            $pdo->prepare("INSERT INTO order_status_log (order_id,from_status,to_status,changed_by,note) VALUES (?,?,?,?,?)")
+                ->execute([$item['order_id'], $item['order_status'], 'confirmed', $user['id'], 'Reset for redelivery after exchange']);
+        } else {
+            $pdo->prepare("UPDATE orders SET amount_paid=?, payment_status=?, payment_method=? WHERE id=?")
+                ->execute([$newAmountPaid, $newPaymentStatus, $newPaymentMethod, $item['order_id']]);
+        }
 
         $pdo->commit();
         echo json_encode(['success' => true]);
