@@ -187,10 +187,6 @@ include __DIR__ . '/../../components/head.php';
             Export CSV
           </a>
           <?php if ($isAdmin || $isSuper): ?>
-          <button onclick="dispatchAllConfirmed()" class="btn btn-outline" id="dispatchAllBtn">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-            Dispatch All Confirmed
-          </button>
           <button onclick="moveAllToCourier()" class="btn btn-outline" id="moveAllCourierBtn">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
             Move All to In Courier
@@ -464,20 +460,6 @@ async function onStatusChange(selectEl) {
 }
 
 <?php if ($isAdmin || $isSuper): ?>
-async function dispatchAllConfirmed() {
-  const btn = document.getElementById('dispatchAllBtn');
-  btn.disabled = true;
-  const res  = await fetch(`${APP_URL}/api/orders.php?action=dispatch_all_confirmed`, { method: 'POST' });
-  const data = await res.json();
-  btn.disabled = false;
-  if (data.success) {
-    showToast(data.count > 0 ? `${data.count} order(s) dispatched` : 'No confirmed orders found', 'success');
-    setTimeout(() => location.reload(), 700);
-  } else {
-    showToast(data.message || 'Failed', 'error');
-  }
-}
-
 async function moveAllToCourier() {
   const btn = document.getElementById('moveAllCourierBtn');
   btn.disabled = true;
