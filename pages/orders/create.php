@@ -127,7 +127,7 @@ include __DIR__ . '/../../components/head.php';
           <div class="card">
             <div class="card-title" style="margin-bottom:14px">Customer & Shipping Details</div>
             <div style="display:flex;flex-direction:column;gap:12px">
-              <div class="grid-3" style="gap:12px">
+              <div class="grid-2" style="gap:12px">
                 <div class="form-group">
                   <label class="form-label">Customer Name *</label>
                   <input type="text" id="custName" class="form-control" placeholder="Full name" required>
@@ -138,25 +138,11 @@ include __DIR__ . '/../../components/head.php';
                   <div id="blacklistWarning" style="display:none;margin-top:6px;padding:8px 10px;background:#fef2f2;border:1px solid #fecaca;border-radius:var(--radius-sm);color:#b91c1c;font-size:.78rem;font-weight:600"></div>
                   <div id="duplicateWarning" style="display:none;margin-top:6px;padding:8px 10px;background:#fefce8;border:1px solid #fde68a;border-radius:var(--radius-sm);color:#92400e;font-size:.78rem"></div>
                 </div>
+              </div>
+              <div class="grid-2" style="gap:12px">
                 <div class="form-group">
                   <label class="form-label">Delivery Address</label>
                   <input type="text" id="custAddress" class="form-control" placeholder="Street, City, District">
-                </div>
-              </div>
-              <div class="grid-4" style="gap:12px">
-                <div class="form-group">
-                  <label class="form-label">Page</label>
-                  <div style="display:flex;gap:6px;align-items:center">
-                    <select id="fbPage" class="form-control">
-                      <option value="">— None —</option>
-                      <?php foreach ($fbPages as $fp): ?>
-                      <option value="<?= $fp['id'] ?>"><?= e($fp['name']) ?></option>
-                      <?php endforeach; ?>
-                    </select>
-                    <?php if ($isAdmin): ?>
-                    <button type="button" class="btn btn-outline btn-sm" style="white-space:nowrap;padding:8px 10px" onclick="document.getElementById('addPageModal').style.display='flex'">+</button>
-                    <?php endif; ?>
-                  </div>
                 </div>
                 <div class="form-group">
                   <label class="form-label">Courier Name</label>
@@ -172,6 +158,22 @@ include __DIR__ . '/../../components/head.php';
                     <?php endif; ?>
                   </div>
                 </div>
+              </div>
+              <div class="grid-3" style="gap:12px">
+                <div class="form-group">
+                  <label class="form-label">Page</label>
+                  <div style="display:flex;gap:6px;align-items:center">
+                    <select id="fbPage" class="form-control">
+                      <option value="">— None —</option>
+                      <?php foreach ($fbPages as $fp): ?>
+                      <option value="<?= $fp['id'] ?>"><?= e($fp['name']) ?></option>
+                      <?php endforeach; ?>
+                    </select>
+                    <?php if ($isAdmin): ?>
+                    <button type="button" class="btn btn-outline btn-sm" style="white-space:nowrap;padding:8px 10px" onclick="document.getElementById('addPageModal').style.display='flex'">+</button>
+                    <?php endif; ?>
+                  </div>
+                </div>
                 <div class="form-group">
                   <label class="form-label">Shipping Method</label>
                   <select id="shippingMethod" class="form-control" onchange="recalc()">
@@ -183,21 +185,14 @@ include __DIR__ . '/../../components/head.php';
                 </div>
                 <div class="form-group">
                   <label class="form-label">&nbsp;</label>
-                  <div style="display:flex;align-items:center;gap:8px;height:38px">
-                    <input type="checkbox" id="prepaidCheckbox" style="width:16px;height:16px" onchange="togglePrepaid()">
-                    <label for="prepaidCheckbox" style="font-size:.88rem;font-weight:600;color:var(--text);margin:0;cursor:pointer">Prepaid</label>
+                  <div style="display:flex;align-items:center;gap:6px;height:38px">
+                    <input type="checkbox" id="prepaidCheckbox" style="width:16px;height:16px;flex-shrink:0" onchange="togglePrepaid()">
+                    <label for="prepaidCheckbox" style="font-size:.88rem;font-weight:600;color:var(--text);margin:0;cursor:pointer;white-space:nowrap">Prepaid</label>
+                    <input type="number" id="amountPaidInput" class="form-control" min="0" step="0.01" value="0" disabled
+                           style="display:none;width:100px;flex-shrink:0" oninput="amountPaidTouched=true">
                   </div>
-                  <input type="number" id="amountPaidInput" class="form-control" min="0" step="0.01" value="0" disabled
-                         style="display:none;margin-top:6px" oninput="amountPaidTouched=true">
                 </div>
               </div>
-            </div>
-          </div>
-
-          <!-- Order Information -->
-          <div class="card">
-            <div class="card-title" style="margin-bottom:14px">Order Information</div>
-            <div style="display:flex;flex-direction:column;gap:12px">
               <div class="form-group">
                 <label class="form-label">Remarks / Staff Notes</label>
                 <textarea id="remarks" class="form-control" rows="3" placeholder="Internal notes about this order..."></textarea>
