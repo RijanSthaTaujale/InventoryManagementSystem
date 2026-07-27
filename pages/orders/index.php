@@ -58,7 +58,8 @@ $stmt = $pdo->prepare("
     SELECT o.*, COUNT(oi.id) AS item_count,
            u.name AS assigned_name,
            uc.name AS created_by_name,
-           GROUP_CONCAT(DISTINCT oi.product_name SEPARATOR ', ') AS product_names,
+           GROUP_CONCAT(oi.product_name ORDER BY oi.id SEPARATOR '~~') AS product_names,
+           GROUP_CONCAT(oi.qty ORDER BY oi.id SEPARATOR '~~') AS product_qtys,
            fp.name AS page_name
     FROM orders o
     LEFT JOIN order_items oi ON oi.order_id = o.id
@@ -300,7 +301,6 @@ include __DIR__ . '/../../components/head.php';
               <th>Product</th>
               <?php if ($isAdmin || $isSuper): ?><th>Total</th><?php endif; ?>
               <th>Status</th>
-              <th>Page</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -337,6 +337,9 @@ include __DIR__ . '/../../components/head.php';
                 <?php if ($o['customer_phone']): ?>
                 <div style="font-size:.74rem;color:var(--text-muted)"><?= e($o['customer_phone']) ?></div>
                 <?php endif; ?>
+                <?php if ($o['customer_address']): ?>
+                <div style="font-size:.72rem;color:var(--text-muted);margin-top:2px"><?= e($o['customer_address']) ?></div>
+                <?php endif; ?>
                 <?php if ($isBlacklisted): ?>
                 <div style="font-size:.68rem;font-weight:700;color:#b91c1c;margin-top:2px">⚠ Blacklisted</div>
                 <?php elseif ($isDuplicate): ?>
@@ -346,7 +349,20 @@ include __DIR__ . '/../../components/head.php';
                 <div style="font-size:.68rem;font-weight:700;color:#6d28d9;margin-top:2px">&#8644; Exchanged</div>
                 <?php endif; ?>
               </td>
-              <td class="text-muted" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="<?= e($o['product_names'] ?? '') ?>"><?= e($o['product_names'] ?? '—') ?></td>
+              <?php
+                $productNames = $o['product_names'] ? explode('~~', $o['product_names']) : [];
+                $productQtys  = $o['product_qtys']  ? explode('~~', $o['product_qtys'])  : [];
+              ?>
+              <td class="text-muted" style="max-width:240px">
+                <?php if ($productNames): foreach ($productNames as $i => $pname): ?>
+                <div style="font-size:.82rem;color:var(--text)"><?= e($pname) ?> <span style="color:var(--text-muted)">&times;<?= e($productQtys[$i] ?? '1') ?></span></div>
+                <?php endforeach; else: ?>
+                —
+                <?php endif; ?>
+                <?php if ($o['page_name']): ?>
+                <div style="font-size:.7rem;color:var(--text-muted);margin-top:3px">Page: <?= e($o['page_name']) ?></div>
+                <?php endif; ?>
+              </td>
               <?php if ($isAdmin || $isSuper):
                 $rowAmountDue = max(0, (float)$o['total'] - (float)$o['amount_paid']);
               ?>
@@ -370,7 +386,6 @@ include __DIR__ . '/../../components/head.php';
                   <?php endforeach; ?>
                 </select>
               </td>
-              <td class="text-muted"><?= e($o['page_name'] ?? '—') ?></td>
               <td>
                 <div style="display:flex;gap:5px;align-items:center">
                   <a href="<?= APP_URL ?>/pages/orders/view.php?id=<?= urlencode($o['order_id']) ?>" class="btn btn-outline btn-xs">View</a>
