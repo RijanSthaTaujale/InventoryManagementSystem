@@ -292,12 +292,12 @@ include __DIR__ . '/../../components/head.php';
           <thead>
             <tr>
               <th>Order ID</th>
+              <th>Date</th>
               <th>Customer</th>
               <th>Product</th>
               <?php if ($isAdmin || $isSuper): ?><th>Total</th><?php endif; ?>
               <th>Status</th>
               <th>Page</th>
-              <th>Date</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -320,7 +320,11 @@ include __DIR__ . '/../../components/head.php';
             <tr style="<?= $rowStyle ?>">
               <td>
                 <a href="<?= APP_URL ?>/pages/orders/view.php?id=<?= urlencode($o['order_id']) ?>"
-                   style="font-weight:700;color:var(--primary);font-size:.85rem"><?= e($o['order_id']) ?></a>
+                   style="font-weight:700;color:var(--primary);font-size:.76rem"><?= e($o['order_id']) ?></a>
+              </td>
+              <td>
+                <div style="font-size:.8rem"><?= date('d M Y', strtotime($o['created_at'])) ?></div>
+                <div style="font-size:.72rem;color:var(--text-muted)"><?= date('h:i A', strtotime($o['created_at'])) ?></div>
               </td>
               <td>
                 <div style="font-weight:600;font-size:.85rem"><?= e($o['customer_name']) ?></div>
@@ -362,14 +366,15 @@ include __DIR__ . '/../../components/head.php';
               </td>
               <td class="text-muted"><?= e($o['page_name'] ?? '—') ?></td>
               <td>
-                <div style="font-size:.8rem"><?= date('d M Y', strtotime($o['created_at'])) ?></div>
-                <div style="font-size:.72rem;color:var(--text-muted)"><?= date('h:i A', strtotime($o['created_at'])) ?></div>
-              </td>
-              <td>
-                <div style="display:flex;gap:5px">
+                <div style="display:flex;gap:5px;align-items:center">
                   <a href="<?= APP_URL ?>/pages/orders/view.php?id=<?= urlencode($o['order_id']) ?>" class="btn btn-outline btn-xs">View</a>
                   <?php if (in_array($o['status'], $editableStatuses, true)): ?>
                   <a href="<?= APP_URL ?>/pages/orders/create.php?edit=<?= urlencode($o['order_id']) ?>" class="btn btn-outline btn-xs">Edit</a>
+                  <?php endif; ?>
+                  <?php if (!empty($o['remarks'])): ?>
+                  <span title="<?= e($o['remarks']) ?>" style="display:inline-flex;color:var(--text-muted);cursor:help">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  </span>
                   <?php endif; ?>
                 </div>
               </td>
