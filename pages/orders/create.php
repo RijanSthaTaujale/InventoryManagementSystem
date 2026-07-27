@@ -175,6 +175,12 @@ include __DIR__ . '/../../components/head.php';
                   </select>
                 </div>
               </div>
+              <div class="form-group" style="display:flex;align-items:center;gap:8px">
+                <input type="checkbox" id="prepaidCheckbox" style="width:16px;height:16px">
+                <label for="prepaidCheckbox" style="font-size:.85rem;color:var(--text-secondary);margin:0;cursor:pointer">
+                  Prepaid (paid online) — courier should not collect any amount on delivery
+                </label>
+              </div>
               <div class="form-group">
                 <label class="form-label">Courier Name</label>
                 <div style="display:flex;gap:8px;align-items:center">
@@ -304,6 +310,7 @@ const EDIT_ORDER = <?= json_encode([
     'fb_page_id'      => $order['fb_page_id'],
     'shipping_method' => $order['shipping_method'],
     'payment_method'  => $order['payment_method'],
+    'payment_status'  => $order['payment_status'],
     'courier_name'    => $order['courier_name'],
     'discount'        => $order['discount'],
     'discount_type'   => $order['discount_type'],
@@ -566,6 +573,7 @@ async function submitOrder() {
     customer_address: custAddress,
     fb_page_id:       document.getElementById('fbPage').value || null,
     payment_method:   document.getElementById('paymentMethod').value,
+    prepaid:          document.getElementById('prepaidCheckbox').checked,
     shipping_method:  sel.value,
     shipping_cost:    shipping,
     courier_name:     document.getElementById('courierName').value.trim(),
@@ -611,6 +619,7 @@ if (IS_EDIT) {
   if (EDIT_ORDER.fb_page_id) document.getElementById('fbPage').value = EDIT_ORDER.fb_page_id;
   if (EDIT_ORDER.shipping_method) document.getElementById('shippingMethod').value = EDIT_ORDER.shipping_method;
   if (EDIT_ORDER.payment_method) document.getElementById('paymentMethod').value = EDIT_ORDER.payment_method;
+  document.getElementById('prepaidCheckbox').checked = EDIT_ORDER.payment_status === 'paid';
   if (EDIT_ORDER.courier_name) {
     const courierSel = document.getElementById('courierName');
     if (![...courierSel.options].some(o => o.value === EDIT_ORDER.courier_name)) {

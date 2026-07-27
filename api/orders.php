@@ -175,7 +175,9 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $customer_address = trim($body['customer_address'] ?? '');
     $fb_page_id       = (int)($body['fb_page_id']      ?? 0) ?: null;
     $payment_method   = trim($body['payment_method']   ?? 'cash');
-    $payment_status   = 'unpaid'; // always starts unpaid — not client-controlled
+    // Staff can flag an order as already paid online (prepaid) — this only
+    // affects what the courier is told to collect, never the order's value.
+    $payment_status   = !empty($body['prepaid']) ? 'paid' : 'unpaid';
     $shipping_method  = trim($body['shipping_method']  ?? '');
     $shipping_cost    = (float)($body['shipping_cost'] ?? 0);
     $courier_name     = trim($body['courier_name']     ?? '');
@@ -361,6 +363,7 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $customer_address = trim($body['customer_address'] ?? '');
     $fb_page_id       = (int)($body['fb_page_id']      ?? 0) ?: null;
     $payment_method   = trim($body['payment_method']   ?? 'cash');
+    $payment_status   = !empty($body['prepaid']) ? 'paid' : 'unpaid';
     $shipping_method  = trim($body['shipping_method']  ?? '');
     $shipping_cost    = (float)($body['shipping_cost'] ?? 0);
     $courier_name     = trim($body['courier_name']     ?? '');
@@ -442,12 +445,12 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             UPDATE orders SET
                 customer_name=?, customer_phone=?, customer_email=?, customer_address=?, fb_page_id=?,
                 subtotal=?, discount=?, discount_type=?, shipping_cost=?, shipping_method=?,
-                courier_name=?, courier_charge=?, total=?, payment_method=?, remarks=?, updated_by=?
+                courier_name=?, courier_charge=?, total=?, payment_method=?, payment_status=?, remarks=?, updated_by=?
             WHERE id=?
         ")->execute([
             $customer_name, $customer_phone ?: null, $customer_email ?: null, $customer_address ?: null, $fb_page_id,
             $subtotal, $discountAmount, $discount_type, $shipping_cost, $shipping_method ?: null,
-            $courier_name ?: null, $courier_charge, $total, $payment_method, $remarks ?: null, $user['id'],
+            $courier_name ?: null, $courier_charge, $total, $payment_method, $payment_status, $remarks ?: null, $user['id'],
             $existing['id'],
         ]);
 
@@ -714,7 +717,7 @@ if ($action === 'export_csv' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     // joined together (same item order for both, so they line up positionally).
     $stmt = $pdo->prepare("
         SELECT o.order_id, o.customer_name, o.customer_phone, o.courier_name, o.customer_address,
-               o.total, o.remarks, fp.name AS page_name,
+               o.total, o.payment_status, o.remarks, fp.name AS page_name,
                GROUP_CONCAT(oi.product_name ORDER BY oi.id SEPARATOR '; ') AS product_names,
                GROUP_CONCAT(oi.qty ORDER BY oi.id SEPARATOR '; ') AS quantities
         FROM orders o
@@ -731,9 +734,13 @@ if ($action === 'export_csv' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     header('Content-Disposition: attachment; filename="orders_export_' . date('Ymd_His') . '.csv"');
 
     $out = fopen('php://output', 'w');
-    fputcsv($out, ['Order ID', 'Name', 'Phone Number', 'Courier', 'Address', 'Price', 'Quantity', 'Product Name', 'Page', 'Remarks']);
+    fputcsv($out, ['Order ID', 'Name', 'Phone Number', 'Courier', 'Address', 'Order Value', 'Amount', 'Quantity', 'Product Name', 'Page', 'Remarks']);
 
     foreach ($rows as $r) {
+        // Order Value is always the real order total (our revenue). Amount is
+        // what the courier should actually collect from the customer on
+        // delivery — zero if the order was already paid for online.
+        $amountToCollect = $r['payment_status'] === 'paid' ? 0 : $r['total'];
         fputcsv($out, [
             $r['order_id'],
             $r['customer_name'],
@@ -741,6 +748,7 @@ if ($action === 'export_csv' && $_SERVER['REQUEST_METHOD'] === 'GET') {
             $r['courier_name'] ?? '',
             $r['customer_address'] ?? '',
             $r['total'],
+            $amountToCollect,
             $r['quantities'] ?? '',
             $r['product_names'] ?? '',
             $r['page_name'] ?? '',
