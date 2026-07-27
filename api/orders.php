@@ -827,7 +827,9 @@ if ($action === 'export_csv' && $_SERVER['REQUEST_METHOD'] === 'GET') {
         $like    = "%$search%";
         $params  = array_merge($params, [$like, $like, $like]);
     }
-    if ($status && in_array($status, $validStatuses)) { $where[] = "o.status = ?"; $params[] = $status; }
+    if ($status === 'exchanged') {
+        $where[] = "EXISTS (SELECT 1 FROM order_returns r WHERE r.order_id = o.id AND r.is_exchange = 1)";
+    } elseif ($status && in_array($status, $validStatuses)) { $where[] = "o.status = ?"; $params[] = $status; }
     if ($dateFrom) { $where[] = "DATE(o.created_at) >= ?"; $params[] = $dateFrom; }
     if ($dateTo)   { $where[] = "DATE(o.created_at) <= ?"; $params[] = $dateTo; }
     if ($courier)  { $where[] = "o.courier_name = ?"; $params[] = $courier; }

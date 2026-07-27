@@ -30,7 +30,12 @@ if ($search) {
     $like     = "%$search%";
     $params   = array_merge($params, [$like, $like, $like]);
 }
-if ($status && in_array($status, $validStatuses)) {
+if ($status === 'exchanged') {
+    // Not a real order.status value — an order can be Delivered (or any
+    // other real status) AND have had an item exchanged at the same time,
+    // so this is its own virtual filter rather than a status to set.
+    $where[] = "EXISTS (SELECT 1 FROM order_returns r WHERE r.order_id = o.id AND r.is_exchange = 1)";
+} elseif ($status && in_array($status, $validStatuses)) {
     $where[]  = "o.status = ?";
     $params[] = $status;
 }
@@ -106,6 +111,7 @@ foreach ($validStatuses as $s) {
     $statusCounts[$s] = (int)$r->fetchColumn();
 }
 $statusCounts['all'] = (int)$pdo->query("SELECT COUNT(*) FROM orders")->fetchColumn();
+$statusCounts['exchanged'] = (int)$pdo->query("SELECT COUNT(DISTINCT order_id) FROM order_returns WHERE is_exchange=1")->fetchColumn();
 
 // Revenue total (admin + supervisor). Excludes shipping_cost — that's a
 // customer-paid pass-through for the courier, not actual sales revenue.
@@ -240,6 +246,16 @@ include __DIR__ . '/../../components/head.php';
           <span style="background:<?= $active?'rgba(255,255,255,.25)':'var(--bg)' ?>;padding:1px 6px;border-radius:9999px;font-size:.7rem"><?= $cnt ?></span>
         </a>
         <?php endforeach; ?>
+        <?php if ($statusCounts['exchanged'] > 0):
+          $exActive = $status === 'exchanged';
+          $exQ      = http_build_query(array_filter(['status'=>'exchanged','search'=>$search]));
+        ?>
+        <a href="<?= APP_URL ?>/pages/orders/index.php?<?= $exQ ?>"
+           style="display:flex;align-items:center;gap:5px;padding:6px 12px;border-radius:var(--radius-sm);font-size:.78rem;font-weight:600;text-decoration:none;<?= $exActive?'background:#6d28d9;color:#fff':'color:#6d28d9' ?>">
+          &#8644; Exchanged
+          <span style="background:<?= $exActive?'rgba(255,255,255,.25)':'#ede9fe' ?>;padding:1px 6px;border-radius:9999px;font-size:.7rem"><?= $statusCounts['exchanged'] ?></span>
+        </a>
+        <?php endif; ?>
       </div>
 
       <!-- Search + date filter -->
