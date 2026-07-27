@@ -320,7 +320,7 @@ include __DIR__ . '/../../components/head.php';
             <tr style="<?= $rowStyle ?>">
               <td>
                 <a href="<?= APP_URL ?>/pages/orders/view.php?id=<?= urlencode($o['order_id']) ?>"
-                   style="font-weight:700;color:var(--primary);font-size:.7rem"><?= e($o['order_id']) ?></a>
+                   style="font-weight:700;color:var(--primary);font-size:.64rem"><?= e($o['order_id']) ?></a>
               </td>
               <td>
                 <div style="font-size:.8rem"><?= date('d M Y', strtotime($o['created_at'])) ?></div>
