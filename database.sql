@@ -227,6 +227,7 @@ CREATE TABLE IF NOT EXISTS `orders` (
   `courier_charge`  DECIMAL(10,2)  NOT NULL DEFAULT 0,
   `payment_method`  VARCHAR(80)    DEFAULT NULL,
   `payment_status`  ENUM('unpaid','paid','partial','refunded') NOT NULL DEFAULT 'unpaid',
+  `amount_paid`     DECIMAL(12,2)  NOT NULL DEFAULT 0 COMMENT 'Actually collected/prepaid so far — total minus this is what the courier still owes to collect',
   `remarks`         TEXT           DEFAULT NULL COMMENT 'Staff message / notes',
   `supervisor_remarks` TEXT        DEFAULT NULL,
   `assigned_to`     INT UNSIGNED   DEFAULT NULL COMMENT 'Staff user handling this order',

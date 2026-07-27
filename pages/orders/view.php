@@ -259,9 +259,21 @@ include __DIR__ . '/../../components/head.php';
               </div>
               <?php endif; ?>
               <div style="display:flex;justify-content:space-between;font-size:1rem;font-weight:700;padding-top:8px;border-top:1px solid var(--border)">
-                <span>Total</span>
+                <span>Total <span style="font-weight:500;color:var(--text-muted);font-size:.78rem">(Order Value)</span></span>
                 <span style="color:var(--primary)"><?= $currency ?> <?= number_format($order['total'], 0) ?></span>
               </div>
+              <?php
+                $amountToCollect = max(0, (float)$order['total'] - (float)$order['amount_paid']);
+              ?>
+              <div style="display:flex;justify-content:space-between;font-size:.9rem;font-weight:700">
+                <span>Amount <span style="font-weight:500;color:var(--text-muted);font-size:.78rem">(to collect)</span></span>
+                <span style="color:<?= $amountToCollect > 0 ? 'var(--text)' : '#22c55e' ?>"><?= $currency ?> <?= number_format($amountToCollect, 0) ?></span>
+              </div>
+              <?php if ($order['amount_paid'] > 0): ?>
+              <div style="display:flex;justify-content:space-between;font-size:.76rem;color:#22c55e;margin-top:-2px">
+                <span>&#10003; <?= $currency ?> <?= number_format($order['amount_paid'], 0) ?> already paid</span>
+              </div>
+              <?php endif; ?>
               <?php if ($totalReturned > 0): ?>
               <div style="display:flex;justify-content:space-between;font-size:.76rem;color:#f97316;margin-top:-2px">
                 <span>&#8617; <?= $currency ?> <?= number_format($totalReturned, 0) ?> already deducted for return(s)</span>

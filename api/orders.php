@@ -268,6 +268,9 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         ? round($subtotal * ($discount / 100), 2)
         : $discount;
     $total = max(0, $subtotal - $discountAmount + $shipping_cost);
+    // If prepaid, the full amount was collected online right now — track that
+    // separately from $total, since $total can later change via an Exchange.
+    $amount_paid = $payment_status === 'paid' ? $total : 0;
 
     // Generate order_id: ORD-YYYYMMDD-XXXX
     $last = $pdo->query("SELECT order_id FROM orders ORDER BY id DESC LIMIT 1")->fetchColumn();
@@ -281,12 +284,12 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             INSERT INTO orders
                 (order_id, customer_name, customer_phone, customer_email, customer_address, fb_page_id,
                  subtotal, discount, discount_type, shipping_cost, shipping_method, courier_name, courier_charge, total,
-                 payment_method, payment_status, status, remarks, created_by, assigned_to)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'new',?,?,?)
+                 payment_method, payment_status, amount_paid, status, remarks, created_by, assigned_to)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'new',?,?,?)
         ")->execute([
             $orderId, $customer_name, $customer_phone ?: null, $customer_email ?: null, $customer_address ?: null, $fb_page_id,
             $subtotal, $discountAmount, $discount_type, $shipping_cost, $shipping_method ?: null, $courier_name ?: null, $courier_charge, $total,
-            $payment_method, $payment_status, $remarks ?: null, $user['id'], $user['id'],
+            $payment_method, $payment_status, $amount_paid, $remarks ?: null, $user['id'], $user['id'],
         ]);
         $dbOrderId = $pdo->lastInsertId();
 
@@ -453,6 +456,9 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         ? round($subtotal * ($discount / 100), 2)
         : $discount;
     $total = max(0, $subtotal - $discountAmount + $shipping_cost);
+    // Editing only happens pre-dispatch, so nothing could have been collected
+    // yet — safe to just recompute the same way order creation does.
+    $amount_paid = $payment_status === 'paid' ? $total : 0;
 
     $pdo->beginTransaction();
     try {
@@ -460,12 +466,12 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             UPDATE orders SET
                 customer_name=?, customer_phone=?, customer_email=?, customer_address=?, fb_page_id=?,
                 subtotal=?, discount=?, discount_type=?, shipping_cost=?, shipping_method=?,
-                courier_name=?, courier_charge=?, total=?, payment_method=?, payment_status=?, remarks=?, updated_by=?
+                courier_name=?, courier_charge=?, total=?, payment_method=?, payment_status=?, amount_paid=?, remarks=?, updated_by=?
             WHERE id=?
         ")->execute([
             $customer_name, $customer_phone ?: null, $customer_email ?: null, $customer_address ?: null, $fb_page_id,
             $subtotal, $discountAmount, $discount_type, $shipping_cost, $shipping_method ?: null,
-            $courier_name ?: null, $courier_charge, $total, $payment_method, $payment_status, $remarks ?: null, $user['id'],
+            $courier_name ?: null, $courier_charge, $total, $payment_method, $payment_status, $amount_paid, $remarks ?: null, $user['id'],
             $existing['id'],
         ]);
 
@@ -530,7 +536,7 @@ if ($action === 'status' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         // still 'unpaid' (i.e. not already flagged prepaid), it's paid now.
         // This matters later: an Exchange or re-export on this order must
         // never tell the courier to collect money again for it.
-        $extra = ", delivered_at=NOW(), payment_status=IF(payment_status='unpaid','paid',payment_status)";
+        $extra = ", delivered_at=NOW(), amount_paid=IF(payment_status='unpaid',total,amount_paid), payment_status=IF(payment_status='unpaid','paid',payment_status)";
     }
 
     $pdo->beginTransaction();
@@ -795,7 +801,7 @@ if ($action === 'bulk_deliver' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$o) { $skipped[] = "$oid (not found)"; continue; }
             if ($o['status'] !== 'in_courier') { $skipped[] = "$oid (status: {$o['status']})"; continue; }
 
-            $pdo->prepare("UPDATE orders SET status='delivered', delivered_at=NOW(), updated_by=?, payment_status=IF(payment_status='unpaid','paid',payment_status) WHERE id=?")
+            $pdo->prepare("UPDATE orders SET status='delivered', delivered_at=NOW(), updated_by=?, amount_paid=IF(payment_status='unpaid',total,amount_paid), payment_status=IF(payment_status='unpaid','paid',payment_status) WHERE id=?")
                 ->execute([$user['id'], $o['id']]);
             $pdo->prepare("INSERT INTO order_status_log (order_id,from_status,to_status,changed_by) VALUES (?,'in_courier','delivered',?)")
                 ->execute([$o['id'], $user['id']]);
@@ -840,7 +846,7 @@ if ($action === 'export_csv' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     // joined together (same item order for both, so they line up positionally).
     $stmt = $pdo->prepare("
         SELECT o.order_id, o.customer_name, o.customer_phone, o.courier_name, o.customer_address,
-               o.total, o.payment_status, o.remarks, fp.name AS page_name,
+               o.total, o.amount_paid, o.remarks, fp.name AS page_name,
                GROUP_CONCAT(oi.product_name ORDER BY oi.id SEPARATOR '; ') AS product_names,
                GROUP_CONCAT(oi.qty ORDER BY oi.id SEPARATOR '; ') AS quantities
         FROM orders o
@@ -861,9 +867,12 @@ if ($action === 'export_csv' && $_SERVER['REQUEST_METHOD'] === 'GET') {
 
     foreach ($rows as $r) {
         // Order Value is always the real order total (our revenue). Amount is
-        // what the courier should actually collect from the customer on
-        // delivery — zero if the order was already paid for online.
-        $amountToCollect = $r['payment_status'] === 'paid' ? 0 : $r['total'];
+        // what the courier should actually collect on delivery — the total
+        // minus whatever's already been paid/prepaid, never negative. This
+        // stays correct even after a price-changing Exchange on an
+        // already-paid order (e.g. Rs 500 paid, exchanged for a Rs 600 item
+        // — Amount correctly shows the Rs 100 difference still owed).
+        $amountToCollect = max(0, (float)$r['total'] - (float)$r['amount_paid']);
         fputcsv($out, [
             $r['order_id'],
             $r['customer_name'],
