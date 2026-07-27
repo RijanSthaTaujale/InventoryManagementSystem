@@ -189,10 +189,12 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $customer_email   = trim($body['customer_email']   ?? '');
     $customer_address = trim($body['customer_address'] ?? '');
     $fb_page_id       = (int)($body['fb_page_id']      ?? 0) ?: null;
-    $payment_method   = trim($body['payment_method']   ?? 'cash');
     // Staff can flag an order as already paid online (prepaid) — this only
     // affects what the courier is told to collect, never the order's value.
-    $payment_status   = !empty($body['prepaid']) ? 'paid' : 'unpaid';
+    // Payment method itself is no longer a separate field — derived from prepaid.
+    $isPrepaid        = !empty($body['prepaid']);
+    $payment_method   = $isPrepaid ? 'Prepaid' : 'Cash on Delivery';
+    $payment_status   = $isPrepaid ? 'paid' : 'unpaid';
     $shipping_method  = trim($body['shipping_method']  ?? '');
     $shipping_cost    = (float)($body['shipping_cost'] ?? 0);
     $courier_name     = trim($body['courier_name']     ?? '');
@@ -380,8 +382,9 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $customer_email   = trim($body['customer_email']   ?? '');
     $customer_address = trim($body['customer_address'] ?? '');
     $fb_page_id       = (int)($body['fb_page_id']      ?? 0) ?: null;
-    $payment_method   = trim($body['payment_method']   ?? 'cash');
-    $payment_status   = !empty($body['prepaid']) ? 'paid' : 'unpaid';
+    $isPrepaid        = !empty($body['prepaid']);
+    $payment_method   = $isPrepaid ? 'Prepaid' : 'Cash on Delivery';
+    $payment_status   = $isPrepaid ? 'paid' : 'unpaid';
     $shipping_method  = trim($body['shipping_method']  ?? '');
     $shipping_cost    = (float)($body['shipping_cost'] ?? 0);
     $courier_name     = trim($body['courier_name']     ?? '');

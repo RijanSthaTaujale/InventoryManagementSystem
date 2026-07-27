@@ -44,7 +44,6 @@ if (!$isEditMode) {
 $fbPages         = $pdo->query("SELECT id, name FROM fb_pages WHERE status='active' ORDER BY name")->fetchAll();
 $couriers        = $pdo->query("SELECT id, name FROM couriers WHERE status='active' ORDER BY name")->fetchAll();
 $shippingMethods = $pdo->query("SELECT id, name, cost FROM shipping_methods WHERE status='active' ORDER BY name")->fetchAll();
-$paymentMethods  = $pdo->query("SELECT id, name FROM payment_methods WHERE status='active' ORDER BY name")->fetchAll();
 
 include __DIR__ . '/../../components/head.php';
 ?>
@@ -167,19 +166,12 @@ include __DIR__ . '/../../components/head.php';
                   </select>
                 </div>
                 <div class="form-group">
-                  <label class="form-label">Payment Method</label>
-                  <select id="paymentMethod" class="form-control">
-                    <?php foreach ($paymentMethods as $pm): ?>
-                    <option value="<?= e($pm['name']) ?>"><?= e($pm['name']) ?></option>
-                    <?php endforeach; ?>
-                  </select>
+                  <label class="form-label">&nbsp;</label>
+                  <div style="display:flex;align-items:center;gap:8px;height:38px">
+                    <input type="checkbox" id="prepaidCheckbox" style="width:16px;height:16px">
+                    <label for="prepaidCheckbox" style="font-size:.88rem;font-weight:600;color:var(--text);margin:0;cursor:pointer">Prepaid</label>
+                  </div>
                 </div>
-              </div>
-              <div class="form-group" style="display:flex;align-items:center;gap:8px">
-                <input type="checkbox" id="prepaidCheckbox" style="width:16px;height:16px">
-                <label for="prepaidCheckbox" style="font-size:.85rem;color:var(--text-secondary);margin:0;cursor:pointer">
-                  Prepaid (paid online) — courier should not collect any amount on delivery
-                </label>
               </div>
               <div class="form-group">
                 <label class="form-label">Courier Name</label>
@@ -581,7 +573,6 @@ async function submitOrder() {
     customer_phone:   custPhone,
     customer_address: custAddress,
     fb_page_id:       document.getElementById('fbPage').value || null,
-    payment_method:   document.getElementById('paymentMethod').value,
     prepaid:          document.getElementById('prepaidCheckbox').checked,
     shipping_method:  sel.value,
     shipping_cost:    shipping,
@@ -627,7 +618,6 @@ if (IS_EDIT) {
   document.getElementById('custAddress').value = EDIT_ORDER.customer_address || '';
   if (EDIT_ORDER.fb_page_id) document.getElementById('fbPage').value = EDIT_ORDER.fb_page_id;
   if (EDIT_ORDER.shipping_method) document.getElementById('shippingMethod').value = EDIT_ORDER.shipping_method;
-  if (EDIT_ORDER.payment_method) document.getElementById('paymentMethod').value = EDIT_ORDER.payment_method;
   document.getElementById('prepaidCheckbox').checked = EDIT_ORDER.payment_status === 'paid';
   if (EDIT_ORDER.courier_name) {
     const courierSel = document.getElementById('courierName');
