@@ -28,6 +28,7 @@ $currency   = 'Rs';
 
 $categories = $pdo->query("SELECT id, name FROM categories ORDER BY name")->fetchAll();
 $catMap     = array_column($categories, 'id', 'name'); // name → id
+$fbPages    = $pdo->query("SELECT id, name FROM fb_pages WHERE status='active' ORDER BY name")->fetchAll();
 
 $error   = '';
 $success = '';
@@ -145,6 +146,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
         }
 
+        // Facebook Page lookup (case-insensitive match by name)
+        $fbPageName = trim($row['fb_page'] ?? '');
+        $fb_page_id = null;
+        if ($fbPageName) {
+            foreach ($fbPages as $fp) {
+                if (strtolower($fp['name']) === strtolower($fbPageName)) { $fb_page_id = $fp['id']; break; }
+            }
+        }
+
         // Slug
         $slug = strtolower(trim(preg_replace('/[^A-Za-z0-9-]+/', '-', $name), '-'));
         $exists = $pdo->prepare("SELECT id FROM products WHERE slug=?");
@@ -164,12 +174,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         $inserted = insertProductWithUniqueId($pdo, "
             INSERT INTO products
-                (name, slug, category_id, brand, sku, description,
+                (name, slug, category_id, fb_page_id, brand, sku, description,
                  buy_price, sell_price, image_url, quantity, min_stock_level,
                  location, stock_status, status, created_by, product_id)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)
         ", [
-            'name' => $name, 'slug' => $slug, 'category_id' => $cat_id, 'brand' => $brand,
+            'name' => $name, 'slug' => $slug, 'category_id' => $cat_id, 'fb_page_id' => $fb_page_id, 'brand' => $brand,
             'sku' => $sku, 'description' => $desc, 'buy_price' => $buy_price, 'sell_price' => $sell_price,
             'image_url' => $image_url, 'quantity' => $quantity, 'min_stock_level' => $min_stock,
             'location' => $location, 'stock_status' => $stock_status, 'created_by' => $user['id'],
@@ -371,6 +381,7 @@ include __DIR__ . '/../../components/head.php';
                 ['buy_price',       'number', false, 'Cost / buy price in Rs'],
                 ['quantity',        'number', false, 'Initial stock quantity'],
                 ['category',        'text',   false, 'Must match an existing category name'],
+                ['fb_page',         'text',   false, 'Must match an existing Facebook Page name — auto-fills on new orders'],
                 ['brand',           'text',   false, 'Brand name'],
                 ['sku',             'text',   false, 'Unique SKU code'],
                 ['description',     'text',   false, 'Product description'],
@@ -403,6 +414,18 @@ include __DIR__ . '/../../components/head.php';
             </div>
           </div>
 
+          <!-- Available FB pages -->
+          <?php if ($fbPages): ?>
+          <div class="card">
+            <div class="card-title" style="margin-bottom:10px">Available Facebook Pages</div>
+            <div style="display:flex;flex-wrap:wrap;gap:5px">
+              <?php foreach ($fbPages as $fp): ?>
+              <span style="background:var(--bg);padding:3px 9px;border-radius:9999px;font-size:.75rem;font-weight:500"><?= e($fp['name']) ?></span>
+              <?php endforeach; ?>
+            </div>
+          </div>
+          <?php endif; ?>
+
         </div>
       </div>
 
@@ -434,8 +457,8 @@ function handleDrop(e) {
 }
 
 function downloadTemplate() {
-  const headers = ['name','sell_price','buy_price','quantity','category','brand','sku','description','image_filename','image_url','location','min_stock_level'];
-  const example = ['Wireless Headphones','3500','1800','10','Electronics','Sony','SON-001','Premium wireless headphones','headphones.jpg','','Shelf A1','5'];
+  const headers = ['name','sell_price','buy_price','quantity','category','fb_page','brand','sku','description','image_filename','image_url','location','min_stock_level'];
+  const example = ['Wireless Headphones','3500','1800','10','Electronics','','Sony','SON-001','Premium wireless headphones','headphones.jpg','','Shelf A1','5'];
   const csv = [headers.join(','), example.join(',')].join('\n');
   const blob = new Blob([csv], {type:'text/csv'});
   const a = document.createElement('a');
