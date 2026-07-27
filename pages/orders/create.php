@@ -143,7 +143,7 @@ include __DIR__ . '/../../components/head.php';
                 <textarea id="custAddress" class="form-control" rows="2" placeholder="Street, City, District"></textarea>
               </div>
               <div class="form-group">
-                <label class="form-label">Facebook Page</label>
+                <label class="form-label">Page</label>
                 <div style="display:flex;gap:8px;align-items:center">
                   <select id="fbPage" class="form-control">
                     <option value="">— None —</option>
@@ -267,7 +267,7 @@ include __DIR__ . '/../../components/head.php';
 <!-- Add FB Page modal -->
 <div id="addPageModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:var(--radius-xl);padding:24px;max-width:340px;width:90%;box-shadow:var(--shadow-md)">
-    <div style="font-size:1rem;font-weight:700;margin-bottom:14px">Add Facebook Page</div>
+    <div style="font-size:1rem;font-weight:700;margin-bottom:14px">Add Page</div>
     <div class="form-group">
       <label class="form-label">Page Name</label>
       <input type="text" id="newPageName" class="form-control" placeholder="Page name">

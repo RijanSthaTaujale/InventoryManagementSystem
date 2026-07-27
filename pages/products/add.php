@@ -287,7 +287,7 @@ include __DIR__ . '/../../components/head.php';
                   </div>
                 </div>
                 <div class="form-group">
-                  <label class="form-label">Facebook Page</label>
+                  <label class="form-label">Page</label>
                   <select name="fb_page_id" class="form-control">
                     <option value="">— None —</option>
                     <?php foreach ($fbPages as $fp): ?>

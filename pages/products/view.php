@@ -11,7 +11,7 @@ $currency   = 'Rs';
 $id = (int)($_GET['id'] ?? 0);
 if (!$id) redirect('/pages/products/index.php');
 
-$stmt = $pdo->prepare("SELECT p.*, c.name AS category_name FROM products p LEFT JOIN categories c ON c.id=p.category_id WHERE p.id=?");
+$stmt = $pdo->prepare("SELECT p.*, c.name AS category_name, fp.name AS fb_page_name FROM products p LEFT JOIN categories c ON c.id=p.category_id LEFT JOIN fb_pages fp ON fp.id=p.fb_page_id WHERE p.id=?");
 $stmt->execute([$id]);
 $p = $stmt->fetch();
 if (!$p) redirect('/pages/products/index.php');
@@ -152,6 +152,7 @@ include __DIR__ . '/../../components/head.php';
                     'Brand'    => $p['brand']         ?? '—',
                     'SKU'      => $p['sku']            ?? '—',
                     'Category' => $p['category_name']  ?? '—',
+                    'Page'     => $p['fb_page_name']    ?? '—',
                     'Location' => $p['location']       ?? '—',
                     'Weight'   => $p['weight'] ? $p['weight'].'kg' : '—',
                     'Status'   => ucfirst($p['status']),

@@ -381,7 +381,7 @@ include __DIR__ . '/../../components/head.php';
                 ['buy_price',       'number', false, 'Cost / buy price in Rs'],
                 ['quantity',        'number', false, 'Initial stock quantity'],
                 ['category',        'text',   false, 'Must match an existing category name'],
-                ['fb_page',         'text',   false, 'Must match an existing Facebook Page name — auto-fills on new orders'],
+                ['fb_page',         'text',   false, 'Must match an existing Page name — auto-fills on new orders'],
                 ['brand',           'text',   false, 'Brand name'],
                 ['sku',             'text',   false, 'Unique SKU code'],
                 ['description',     'text',   false, 'Product description'],
@@ -417,7 +417,7 @@ include __DIR__ . '/../../components/head.php';
           <!-- Available FB pages -->
           <?php if ($fbPages): ?>
           <div class="card">
-            <div class="card-title" style="margin-bottom:10px">Available Facebook Pages</div>
+            <div class="card-title" style="margin-bottom:10px">Available Pages</div>
             <div style="display:flex;flex-wrap:wrap;gap:5px">
               <?php foreach ($fbPages as $fp): ?>
               <span style="background:var(--bg);padding:3px 9px;border-radius:9999px;font-size:.75rem;font-weight:500"><?= e($fp['name']) ?></span>
