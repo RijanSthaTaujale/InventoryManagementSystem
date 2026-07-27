@@ -224,7 +224,7 @@ CREATE TABLE IF NOT EXISTS `orders` (
   `shipping_method` VARCHAR(100)   DEFAULT NULL,
   `shipping_cost`   DECIMAL(10,2)  NOT NULL DEFAULT 0,
   `courier_name`    VARCHAR(100)   DEFAULT NULL,
-  `courier_charge`  DECIMAL(10,2)  NOT NULL DEFAULT 0,
+  `extra_charge`    DECIMAL(10,2)  NOT NULL DEFAULT 0 COMMENT 'Extra flat charge added on top of the total (e.g. packaging, rush fee)',
   `payment_method`  VARCHAR(80)    DEFAULT NULL,
   `payment_status`  ENUM('unpaid','paid','partial','refunded') NOT NULL DEFAULT 'unpaid',
   `amount_paid`     DECIMAL(12,2)  NOT NULL DEFAULT 0 COMMENT 'Actually collected/prepaid so far — total minus this is what the courier still owes to collect',

@@ -193,7 +193,7 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $shipping_method  = trim($body['shipping_method']  ?? '');
     $shipping_cost    = (float)($body['shipping_cost'] ?? 0);
     $courier_name     = trim($body['courier_name']     ?? '');
-    $courier_charge   = (float)($body['courier_charge'] ?? 0);
+    $extra_charge     = max(0, (float)($body['extra_charge'] ?? 0));
     $discount         = (float)($body['discount']      ?? 0);
     $discount_type    = trim($body['discount_type']    ?? 'fixed');
     $remarks          = trim($body['remarks']          ?? '');
@@ -264,7 +264,7 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $discountAmount = $discount_type === 'percent'
         ? round($subtotal * ($discount / 100), 2)
         : $discount;
-    $total = max(0, $subtotal - $discountAmount + $shipping_cost);
+    $total = max(0, $subtotal - $discountAmount + $extra_charge + $shipping_cost);
     // Amount actually collected right now — staff can override the form's
     // full-amount default down to 0 (COD) or any partial figure. Tracked
     // separately from $total, since $total can later change via an Exchange.
@@ -291,12 +291,12 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->prepare("
             INSERT INTO orders
                 (order_id, customer_name, customer_phone, customer_email, customer_address, fb_page_id,
-                 subtotal, discount, discount_type, shipping_cost, shipping_method, courier_name, courier_charge, total,
+                 subtotal, discount, discount_type, extra_charge, shipping_cost, shipping_method, courier_name, total,
                  payment_method, payment_status, amount_paid, status, remarks, created_by, assigned_to)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'new',?,?,?)
         ")->execute([
             $orderId, $customer_name, $customer_phone ?: null, $customer_email ?: null, $customer_address ?: null, $fb_page_id,
-            $subtotal, $discountAmount, $discount_type, $shipping_cost, $shipping_method ?: null, $courier_name ?: null, $courier_charge, $total,
+            $subtotal, $discountAmount, $discount_type, $extra_charge, $shipping_cost, $shipping_method ?: null, $courier_name ?: null, $total,
             $payment_method, $payment_status, $amount_paid, $remarks ?: null, $user['id'], $user['id'],
         ]);
         $dbOrderId = $pdo->lastInsertId();
@@ -392,7 +392,7 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $shipping_method  = trim($body['shipping_method']  ?? '');
     $shipping_cost    = (float)($body['shipping_cost'] ?? 0);
     $courier_name     = trim($body['courier_name']     ?? '');
-    $courier_charge   = (float)($body['courier_charge'] ?? 0);
+    $extra_charge     = max(0, (float)($body['extra_charge'] ?? 0));
     $discount         = (float)($body['discount']      ?? 0);
     $discount_type    = trim($body['discount_type']    ?? 'fixed');
     $remarks          = trim($body['remarks']          ?? '');
@@ -462,7 +462,7 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $discountAmount = $discount_type === 'percent'
         ? round($subtotal * ($discount / 100), 2)
         : $discount;
-    $total = max(0, $subtotal - $discountAmount + $shipping_cost);
+    $total = max(0, $subtotal - $discountAmount + $extra_charge + $shipping_cost);
     // Editing only happens pre-dispatch, so nothing could have been collected
     // by the courier yet — safe to just recompute the same way order creation does.
     $amount_paid = min($amount_paid_in, $total);
@@ -482,13 +482,13 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->prepare("
             UPDATE orders SET
                 customer_name=?, customer_phone=?, customer_email=?, customer_address=?, fb_page_id=?,
-                subtotal=?, discount=?, discount_type=?, shipping_cost=?, shipping_method=?,
-                courier_name=?, courier_charge=?, total=?, payment_method=?, payment_status=?, amount_paid=?, remarks=?, updated_by=?
+                subtotal=?, discount=?, discount_type=?, extra_charge=?, shipping_cost=?, shipping_method=?,
+                courier_name=?, total=?, payment_method=?, payment_status=?, amount_paid=?, remarks=?, updated_by=?
             WHERE id=?
         ")->execute([
             $customer_name, $customer_phone ?: null, $customer_email ?: null, $customer_address ?: null, $fb_page_id,
-            $subtotal, $discountAmount, $discount_type, $shipping_cost, $shipping_method ?: null,
-            $courier_name ?: null, $courier_charge, $total, $payment_method, $payment_status, $amount_paid, $remarks ?: null, $user['id'],
+            $subtotal, $discountAmount, $discount_type, $extra_charge, $shipping_cost, $shipping_method ?: null,
+            $courier_name ?: null, $total, $payment_method, $payment_status, $amount_paid, $remarks ?: null, $user['id'],
             $existing['id'],
         ]);
 
@@ -829,6 +829,70 @@ if ($action === 'bulk_deliver' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     } catch (Exception $e) {
         $pdo->rollBack();
         echo json_encode(['success' => false, 'message' => 'Failed to process bulk delivery.']);
+    }
+    exit;
+}
+
+// ── DELETE ORDER (admin only) ─────────────────────────────────
+// Permanently removes an order (order_items/order_returns/order_status_log
+// cascade via FK). If stock had already been deducted for it (dispatched or
+// later), that stock is restored first so deleting never silently leaves
+// inventory short.
+if ($action === 'delete_order' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!$isAdmin) { echo json_encode(['success' => false, 'message' => 'Only admin can delete orders.']); exit; }
+
+    $body    = json_decode(file_get_contents('php://input'), true);
+    $orderId = trim($body['order_id'] ?? '');
+    if (!$orderId) { echo json_encode(['success' => false, 'message' => 'Order ID required.']); exit; }
+
+    $stmt = $pdo->prepare("SELECT id, order_id, stock_deducted FROM orders WHERE order_id=?");
+    $stmt->execute([$orderId]);
+    $order = $stmt->fetch();
+    if (!$order) { echo json_encode(['success' => false, 'message' => 'Order not found.']); exit; }
+
+    $pdo->beginTransaction();
+    try {
+        if ($order['stock_deducted']) {
+            adjustOrderStock($pdo, $order['id'], 'return', 1, $user['id'], "Order {$order['order_id']} deleted — stock restored");
+        }
+        $pdo->prepare("DELETE FROM orders WHERE id=?")->execute([$order['id']]);
+        $pdo->commit();
+        echo json_encode(['success' => true]);
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        echo json_encode(['success' => false, 'message' => 'Failed to delete order.']);
+    }
+    exit;
+}
+
+// ── BULK DELETE ORDERS (admin only) ───────────────────────────
+if ($action === 'bulk_delete_orders' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!$isAdmin) { echo json_encode(['success' => false, 'message' => 'Only admin can delete orders.']); exit; }
+
+    $body     = json_decode(file_get_contents('php://input'), true);
+    $orderIds = array_filter(array_map('trim', $body['order_ids'] ?? []));
+    if (empty($orderIds)) { echo json_encode(['success' => false, 'message' => 'No orders selected.']); exit; }
+
+    $deleted = 0;
+    $pdo->beginTransaction();
+    try {
+        foreach ($orderIds as $oid) {
+            $stmt = $pdo->prepare("SELECT id, order_id, stock_deducted FROM orders WHERE order_id=?");
+            $stmt->execute([$oid]);
+            $order = $stmt->fetch();
+            if (!$order) continue;
+
+            if ($order['stock_deducted']) {
+                adjustOrderStock($pdo, $order['id'], 'return', 1, $user['id'], "Order {$order['order_id']} deleted — stock restored");
+            }
+            $pdo->prepare("DELETE FROM orders WHERE id=?")->execute([$order['id']]);
+            $deleted++;
+        }
+        $pdo->commit();
+        echo json_encode(['success' => true, 'deleted' => $deleted]);
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        echo json_encode(['success' => false, 'message' => 'Failed to delete orders.']);
     }
     exit;
 }

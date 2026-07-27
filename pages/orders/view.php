@@ -252,6 +252,12 @@ include __DIR__ . '/../../components/head.php';
                 <span style="font-weight:600;color:#ef4444">- <?= $currency ?> <?= number_format($order['discount'], 0) ?></span>
               </div>
               <?php endif; ?>
+              <?php if ($order['extra_charge'] > 0): ?>
+              <div style="display:flex;justify-content:space-between;font-size:.87rem;color:var(--text-secondary)">
+                <span>Extra Charge</span>
+                <span style="font-weight:600;color:#22c55e">+ <?= $currency ?> <?= number_format($order['extra_charge'], 0) ?></span>
+              </div>
+              <?php endif; ?>
               <?php if ($order['shipping_cost'] > 0): ?>
               <div style="display:flex;justify-content:space-between;font-size:.87rem;color:var(--text-secondary)">
                 <span>Shipping<?= $order['shipping_method'] ? ' (' . e($order['shipping_method']) . ')' : '' ?></span>

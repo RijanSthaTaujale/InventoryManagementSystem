@@ -110,14 +110,16 @@ include __DIR__ . '/../../components/head.php';
               </table>
             </div>
 
-            <!-- Discount -->
-            <div style="display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+            <!-- Discount / Extra Charge -->
+            <div style="display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border);flex-wrap:wrap">
               <label style="font-size:.82rem;font-weight:600;color:var(--text-secondary);white-space:nowrap">Discount:</label>
               <input type="number" id="discountAmt" min="0" step="0.01" value="0" class="form-control" style="max-width:110px" oninput="recalc()">
               <select id="discountType" class="form-control" style="max-width:100px" onchange="recalc()">
                 <option value="fixed">Rs (Fixed)</option>
                 <option value="percent">% (Percent)</option>
               </select>
+              <label style="font-size:.82rem;font-weight:600;color:var(--text-secondary);white-space:nowrap;margin-left:8px">Extra Charge:</label>
+              <input type="number" id="extraChargeAmt" min="0" step="0.01" value="0" class="form-control" style="max-width:110px" oninput="recalc()">
             </div>
           </div>
 
@@ -228,6 +230,10 @@ include __DIR__ . '/../../components/head.php';
                 <span id="sumDiscount" style="font-weight:600;color:#ef4444">- <?= $currency ?> 0</span>
               </div>
               <div style="display:flex;justify-content:space-between;color:var(--text-secondary)">
+                <span>Extra Charge</span>
+                <span id="sumExtraCharge" style="font-weight:600;color:#22c55e">+ <?= $currency ?> 0</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;color:var(--text-secondary)">
                 <span>Shipping</span>
                 <span id="sumShipping" style="font-weight:600;color:var(--text)"><?= $currency ?> 0</span>
               </div>
@@ -309,6 +315,7 @@ const EDIT_ORDER = <?= json_encode([
     'courier_name'    => $order['courier_name'],
     'discount'        => $order['discount'],
     'discount_type'   => $order['discount_type'],
+    'extra_charge'    => $order['extra_charge'],
     'remarks'         => $order['remarks'],
     'items'           => array_map(fn($it) => [
         'id'         => (int)$it['product_id'],
@@ -452,14 +459,16 @@ function recalc() {
   const discAmt  = parseFloat(document.getElementById('discountAmt').value) || 0;
   const discType = document.getElementById('discountType').value;
   const discount = discType === 'percent' ? subtotal * discAmt / 100 : discAmt;
+  const extraCharge = parseFloat(document.getElementById('extraChargeAmt').value) || 0;
 
   const sel      = document.getElementById('shippingMethod');
   const shipping = parseFloat(sel.selectedOptions[0]?.dataset.cost || 0);
-  const total    = Math.max(0, subtotal - discount + shipping);
+  const total    = Math.max(0, subtotal - discount + extraCharge + shipping);
 
   document.getElementById('sumItems').textContent    = items.reduce((s,i)=>s+i.qty,0);
   document.getElementById('sumSubtotal').textContent = `${CURRENCY} ${subtotal.toLocaleString()}`;
   document.getElementById('sumDiscount').textContent  = `- ${CURRENCY} ${discount.toLocaleString()}`;
+  document.getElementById('sumExtraCharge').textContent = `+ ${CURRENCY} ${extraCharge.toLocaleString()}`;
   document.getElementById('sumShipping').textContent  = `${CURRENCY} ${shipping.toLocaleString()}`;
   document.getElementById('sumTotal').textContent     = `${CURRENCY} ${total.toLocaleString()}`;
 
@@ -586,9 +595,10 @@ async function submitOrder() {
   const discType = document.getElementById('discountType').value;
   const subtotal = items.reduce((s,i)=>s+i.qty*i.sell_price,0);
   const discount = discType==='percent' ? subtotal*discAmt/100 : discAmt;
+  const extraCharge = parseFloat(document.getElementById('extraChargeAmt').value) || 0;
   const sel      = document.getElementById('shippingMethod');
   const shipping = parseFloat(sel.selectedOptions[0]?.dataset.cost||0);
-  const total    = Math.max(0, subtotal - discount + shipping);
+  const total    = Math.max(0, subtotal - discount + extraCharge + shipping);
 
   const payload = {
     customer_name:    custName,
@@ -598,6 +608,7 @@ async function submitOrder() {
     amount_paid:      document.getElementById('prepaidCheckbox').checked
                         ? Math.max(0, parseFloat(document.getElementById('amountPaidInput').value) || 0)
                         : 0,
+    extra_charge:     extraCharge,
     shipping_method:  sel.value,
     shipping_cost:    shipping,
     courier_name:     document.getElementById('courierName').value.trim(),
@@ -667,6 +678,7 @@ if (IS_EDIT) {
   document.getElementById('discountAmt').value = (EDIT_ORDER.discount_type === 'percent' && subtotalAtSave > 0)
     ? +(discAmt / subtotalAtSave * 100).toFixed(2)
     : discAmt;
+  document.getElementById('extraChargeAmt').value = parseFloat(EDIT_ORDER.extra_charge) || 0;
 
   renderItems();
   recalc();

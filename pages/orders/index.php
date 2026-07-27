@@ -196,6 +196,12 @@ include __DIR__ . '/../../components/head.php';
             Bulk Deliver by ID
           </button>
           <?php endif; ?>
+          <?php if ($isAdmin): ?>
+          <button onclick="bulkDeleteSelected()" class="btn btn-outline" id="bulkDeleteBtn" style="display:none;color:#ef4444;border-color:#fca5a5">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            Delete Selected (<span id="selectedCount">0</span>)
+          </button>
+          <?php endif; ?>
           <a href="<?= APP_URL ?>/pages/orders/create.php" class="btn btn-primary">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             New Order
@@ -287,6 +293,7 @@ include __DIR__ . '/../../components/head.php';
         <table class="data-table">
           <thead>
             <tr>
+              <?php if ($isAdmin): ?><th style="width:32px"><input type="checkbox" id="selectAllOrders" onchange="toggleSelectAll(this)"></th><?php endif; ?>
               <th>Order ID</th>
               <th>Date</th>
               <th>Customer</th>
@@ -314,6 +321,9 @@ include __DIR__ . '/../../components/head.php';
               $rowStyle      = $isBlacklisted ? 'background:#fef2f2' : ($isDuplicate ? 'background:#fefce8' : '');
             ?>
             <tr style="<?= $rowStyle ?>">
+              <?php if ($isAdmin): ?>
+              <td><input type="checkbox" class="order-select-checkbox" value="<?= e($o['order_id']) ?>" onchange="updateBulkDeleteButton()"></td>
+              <?php endif; ?>
               <td>
                 <a href="<?= APP_URL ?>/pages/orders/view.php?id=<?= urlencode($o['order_id']) ?>"
                    style="font-weight:700;color:var(--primary);font-size:.64rem"><?= e($o['order_id']) ?></a>
@@ -371,6 +381,11 @@ include __DIR__ . '/../../components/head.php';
                   <span title="<?= e($o['remarks']) ?>" style="display:inline-flex;color:var(--text-muted);cursor:help">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                   </span>
+                  <?php endif; ?>
+                  <?php if ($isAdmin): ?>
+                  <button onclick="deleteOrder('<?= e($o['order_id']) ?>')" class="btn btn-outline btn-xs" style="color:#ef4444;border-color:#fca5a5" title="Delete order">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  </button>
                   <?php endif; ?>
                 </div>
               </td>
@@ -492,6 +507,57 @@ async function submitBulkDeliver() {
     setTimeout(() => location.reload(), 900);
   } else {
     showToast(data.message || 'Failed', 'error');
+  }
+}
+<?php endif; ?>
+
+<?php if ($isAdmin): ?>
+function toggleSelectAll(cb) {
+  document.querySelectorAll('.order-select-checkbox').forEach(el => el.checked = cb.checked);
+  updateBulkDeleteButton();
+}
+
+function updateBulkDeleteButton() {
+  const checked = document.querySelectorAll('.order-select-checkbox:checked');
+  const btn     = document.getElementById('bulkDeleteBtn');
+  document.getElementById('selectedCount').textContent = checked.length;
+  btn.style.display = checked.length ? '' : 'none';
+
+  const all       = document.querySelectorAll('.order-select-checkbox');
+  const selectAll = document.getElementById('selectAllOrders');
+  if (selectAll) selectAll.checked = all.length > 0 && checked.length === all.length;
+}
+
+async function deleteOrder(orderId) {
+  if (!confirm(`Permanently delete order ${orderId}? This cannot be undone.`)) return;
+  const res  = await fetch(`${APP_URL}/api/orders.php?action=delete_order`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ order_id: orderId })
+  });
+  const data = await res.json();
+  if (data.success) {
+    showToast('Order deleted', 'success');
+    setTimeout(() => location.reload(), 600);
+  } else {
+    showToast(data.message || 'Failed to delete order', 'error');
+  }
+}
+
+async function bulkDeleteSelected() {
+  const orderIds = [...document.querySelectorAll('.order-select-checkbox:checked')].map(el => el.value);
+  if (!orderIds.length) return;
+  if (!confirm(`Permanently delete ${orderIds.length} order(s)? This cannot be undone.`)) return;
+
+  const res  = await fetch(`${APP_URL}/api/orders.php?action=bulk_delete_orders`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ order_ids: orderIds })
+  });
+  const data = await res.json();
+  if (data.success) {
+    showToast(`${data.deleted} order(s) deleted`, 'success');
+    setTimeout(() => location.reload(), 700);
+  } else {
+    showToast(data.message || 'Failed to delete orders', 'error');
   }
 }
 <?php endif; ?>
