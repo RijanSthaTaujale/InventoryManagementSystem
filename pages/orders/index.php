@@ -104,14 +104,16 @@ if ($pageOrderDbIds) {
     $exchangedOrderIds = array_flip($exStmt->fetchAll(PDO::FETCH_COLUMN));
 }
 
-// Status counts for tab bar
-$statusCounts = [];
-foreach ($validStatuses as $s) {
-    $r = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE status=?");
-    $r->execute([$s]);
-    $statusCounts[$s] = (int)$r->fetchColumn();
+// Status counts for tab bar — one grouped query instead of one COUNT per
+// status (this page is the most-visited one, so that was 10 queries on
+// every single load).
+$statusCounts = array_fill_keys($validStatuses, 0);
+$total = 0;
+foreach ($pdo->query("SELECT status, COUNT(*) AS cnt FROM orders GROUP BY status")->fetchAll() as $row) {
+    $statusCounts[$row['status']] = (int)$row['cnt'];
+    $total += (int)$row['cnt'];
 }
-$statusCounts['all'] = (int)$pdo->query("SELECT COUNT(*) FROM orders")->fetchColumn();
+$statusCounts['all'] = $total;
 $statusCounts['exchanged'] = (int)$pdo->query("SELECT COUNT(DISTINCT order_id) FROM order_returns WHERE is_exchange=1")->fetchColumn();
 
 // Revenue total (admin + supervisor). Excludes shipping_cost — that's a

@@ -2,8 +2,9 @@
 // config/uploads.php
 // Shared helpers for validating and saving uploaded product images.
 
-const UPLOAD_MAX_BYTES   = 5 * 1024 * 1024; // 5MB
-const UPLOAD_ALLOWED_EXT = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+const UPLOAD_MAX_BYTES     = 5 * 1024 * 1024; // 5MB
+const UPLOAD_ALLOWED_EXT   = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+const UPLOAD_MAX_DIMENSION = 1200; // px, longest side after resize
 
 // Strips a filename down to a safe basename with only alphanumerics/-/_ in the name part.
 function sanitizeFilename(string $name): string {
@@ -49,8 +50,54 @@ function saveUploadedImage(array $file, string $destDir): ?string {
     if (!is_dir($destDir)) mkdir($destDir, 0755, true);
 
     $filename = 'img_' . bin2hex(random_bytes(8)) . '.' . $check['ext'];
-    if (!move_uploaded_file($file['tmp_name'], rtrim($destDir, '/') . '/' . $filename)) {
-        return null;
+    $destPath = rtrim($destDir, '/') . '/' . $filename;
+
+    // Downscale/re-compress before storing — a photo straight off a phone
+    // camera can be several MB and thousands of px wide, which is wasted
+    // everywhere it's shown as a 36–40px thumbnail (Products, Inventory,
+    // order search results). Falls back to storing the original untouched
+    // if GD isn't available or the resize fails for any reason.
+    if (!resizeAndSaveImage($file['tmp_name'], $destPath, $check['ext'])) {
+        if (!move_uploaded_file($file['tmp_name'], $destPath)) {
+            return null;
+        }
     }
     return $filename;
+}
+
+// Resizes an image to fit within UPLOAD_MAX_DIMENSION (longest side) and
+// re-encodes it at a reasonable quality. Returns false if it can't be
+// processed (GD missing, corrupt file, unsupported format) so the caller
+// falls back to storing the original upload as-is.
+function resizeAndSaveImage(string $srcPath, string $destPath, string $ext): bool {
+    if (!extension_loaded('gd')) return false;
+
+    $data = @file_get_contents($srcPath);
+    $src  = $data !== false ? @imagecreatefromstring($data) : false;
+    if (!$src) return false;
+
+    $width  = imagesx($src);
+    $height = imagesy($src);
+    $scale  = min(1, UPLOAD_MAX_DIMENSION / max($width, $height));
+    $newW   = max(1, (int)round($width  * $scale));
+    $newH   = max(1, (int)round($height * $scale));
+
+    $dst = imagecreatetruecolor($newW, $newH);
+    if (in_array($ext, ['png', 'gif', 'webp'], true)) {
+        imagealphablending($dst, false);
+        imagesavealpha($dst, true);
+    }
+    imagecopyresampled($dst, $src, 0, 0, 0, 0, $newW, $newH, $width, $height);
+
+    $ok = match ($ext) {
+        'jpg', 'jpeg' => imagejpeg($dst, $destPath, 82),
+        'png'         => imagepng($dst, $destPath, 6),
+        'gif'         => imagegif($dst, $destPath),
+        'webp'        => function_exists('imagewebp') ? imagewebp($dst, $destPath, 82) : false,
+        default       => false,
+    };
+
+    imagedestroy($src);
+    imagedestroy($dst);
+    return $ok;
 }

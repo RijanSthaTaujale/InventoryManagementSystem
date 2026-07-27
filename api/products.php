@@ -23,12 +23,25 @@ if ($action === 'search') {
     $stmt->execute([$like,$like,$like]);
     $products = $stmt->fetchAll();
 
-    $variantStmt = $pdo->prepare("SELECT id,label,value,sell_price,buy_price,qty_adj FROM product_variants WHERE product_id=? ORDER BY id");
+    // Fetch every matched product's variants in one query instead of one
+    // query per row — this endpoint fires on every keystroke while building
+    // an order, so N+1 here means N+1 on every search a staff member types.
+    $variantsByProduct = [];
+    if ($products) {
+        $ids          = array_column($products, 'id');
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $vStmt = $pdo->prepare("SELECT id,product_id,label,value,sell_price,buy_price,qty_adj FROM product_variants WHERE product_id IN ($placeholders) ORDER BY id");
+        $vStmt->execute($ids);
+        foreach ($vStmt->fetchAll() as $v) {
+            $variantsByProduct[$v['product_id']][] = $v;
+        }
+    }
+
     foreach ($products as &$p) {
         $p['image_url'] = productImageUrl($p['image_url']);
-        $variantStmt->execute([$p['id']]);
-        $p['variants'] = $variantStmt->fetchAll();
+        $p['variants']  = $variantsByProduct[$p['id']] ?? [];
     }
+    unset($p);
     echo json_encode(['success'=>true,'products'=>$products]);
     exit;
 }
