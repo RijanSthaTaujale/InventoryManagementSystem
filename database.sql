@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS `products` (
   `name`              VARCHAR(200)   NOT NULL,
   `slug`              VARCHAR(220)   NOT NULL UNIQUE,
   `category_id`       INT UNSIGNED   DEFAULT NULL,
+  `fb_page_id`        INT UNSIGNED   DEFAULT NULL COMMENT 'Usual Facebook Page this product sells through — auto-fills on new orders',
   `brand`             VARCHAR(100)   DEFAULT NULL,
   `sku`               VARCHAR(80)    DEFAULT NULL UNIQUE,
   `description`       TEXT           DEFAULT NULL,
@@ -160,6 +161,9 @@ CREATE TABLE IF NOT EXISTS `fb_pages` (
   `created_at` DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (`created_by`) REFERENCES `users`(`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE `products`
+  ADD FOREIGN KEY (`fb_page_id`) REFERENCES `fb_pages`(`id`) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS `couriers` (
   `id`         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,

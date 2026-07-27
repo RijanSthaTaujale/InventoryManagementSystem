@@ -33,6 +33,7 @@ if ($isEdit) {
 }
 
 $categories = $pdo->query("SELECT id,name FROM categories ORDER BY name")->fetchAll();
+$fbPages    = $pdo->query("SELECT id,name FROM fb_pages WHERE status='active' ORDER BY name")->fetchAll();
 
 $error   = '';
 $success = '';
@@ -104,6 +105,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'name'            => $name,
             'slug'            => $slug,
             'category_id'     => ($d['category_id'] ?? null) ?: null,
+            'fb_page_id'      => ($d['fb_page_id'] ?? null) ?: null,
             'brand'           => trim($d['brand'] ?? '') ?: null,
             'sku'             => trim($d['sku']   ?? '') ?: null,
             'description'     => trim($d['description'] ?? '') ?: null,
@@ -283,6 +285,16 @@ include __DIR__ . '/../../components/head.php';
                     <label class="form-label">SKU</label>
                     <input type="text" name="sku" class="form-control" value="<?= e($product['sku'] ?? '') ?>" placeholder="e.g. SKU-001">
                   </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Facebook Page</label>
+                  <select name="fb_page_id" class="form-control">
+                    <option value="">— None —</option>
+                    <?php foreach ($fbPages as $fp): ?>
+                    <option value="<?= $fp['id'] ?>" <?= ($product['fb_page_id']??'')==$fp['id']?'selected':'' ?>><?= e($fp['name']) ?></option>
+                    <?php endforeach; ?>
+                  </select>
+                  <div class="form-hint">The page this product usually sells through — auto-fills when it's added to a new order.</div>
                 </div>
                 <div class="form-group">
                   <label class="form-label">Description</label>

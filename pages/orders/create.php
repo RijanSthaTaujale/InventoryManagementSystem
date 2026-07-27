@@ -403,6 +403,15 @@ function addItem(p, variant = null) {
   });
   renderItems();
   recalc();
+
+  // Auto-select this product's usual Facebook Page, if it has one — still
+  // freely changeable afterward, this just saves picking it manually.
+  if (p.fb_page_id) {
+    const pageSel = document.getElementById('fbPage');
+    if (pageSel && [...pageSel.options].some(o => o.value == p.fb_page_id)) {
+      pageSel.value = p.fb_page_id;
+    }
+  }
 }
 
 function renderItems() {

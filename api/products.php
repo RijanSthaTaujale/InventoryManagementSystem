@@ -19,7 +19,7 @@ if ($action === 'delete' && $isAdmin) {
 if ($action === 'search') {
     $q    = trim($_GET['q'] ?? '');
     $like = "%$q%";
-    $stmt = $pdo->prepare("SELECT id,product_id,name,sell_price,buy_price,quantity,image_url,stock_status FROM products WHERE status='active' AND (name LIKE ? OR product_id LIKE ? OR sku LIKE ?) LIMIT 20");
+    $stmt = $pdo->prepare("SELECT id,product_id,name,sell_price,buy_price,quantity,image_url,stock_status,fb_page_id FROM products WHERE status='active' AND (name LIKE ? OR product_id LIKE ? OR sku LIKE ?) LIMIT 20");
     $stmt->execute([$like,$like,$like]);
     $products = $stmt->fetchAll();
 
