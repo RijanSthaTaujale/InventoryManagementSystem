@@ -141,18 +141,34 @@ include __DIR__ . '/../../components/head.php';
                 <label class="form-label">Delivery Address</label>
                 <textarea id="custAddress" class="form-control" rows="2" placeholder="Street, City, District"></textarea>
               </div>
-              <div class="form-group">
-                <label class="form-label">Page</label>
-                <div style="display:flex;gap:8px;align-items:center">
-                  <select id="fbPage" class="form-control">
-                    <option value="">— None —</option>
-                    <?php foreach ($fbPages as $fp): ?>
-                    <option value="<?= $fp['id'] ?>"><?= e($fp['name']) ?></option>
-                    <?php endforeach; ?>
-                  </select>
-                  <?php if ($isAdmin): ?>
-                  <button type="button" class="btn btn-outline btn-sm" style="white-space:nowrap" onclick="document.getElementById('addPageModal').style.display='flex'">+ Add Page</button>
-                  <?php endif; ?>
+              <div class="grid-2" style="gap:12px">
+                <div class="form-group">
+                  <label class="form-label">Page</label>
+                  <div style="display:flex;gap:6px;align-items:center">
+                    <select id="fbPage" class="form-control">
+                      <option value="">— None —</option>
+                      <?php foreach ($fbPages as $fp): ?>
+                      <option value="<?= $fp['id'] ?>"><?= e($fp['name']) ?></option>
+                      <?php endforeach; ?>
+                    </select>
+                    <?php if ($isAdmin): ?>
+                    <button type="button" class="btn btn-outline btn-sm" style="white-space:nowrap;padding:8px 10px" onclick="document.getElementById('addPageModal').style.display='flex'">+</button>
+                    <?php endif; ?>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Courier Name</label>
+                  <div style="display:flex;gap:6px;align-items:center">
+                    <select id="courierName" class="form-control">
+                      <option value="">— None —</option>
+                      <?php foreach ($couriers as $c): ?>
+                      <option value="<?= e($c['name']) ?>"><?= e($c['name']) ?></option>
+                      <?php endforeach; ?>
+                    </select>
+                    <?php if ($isAdmin): ?>
+                    <button type="button" class="btn btn-outline btn-sm" style="white-space:nowrap;padding:8px 10px" onclick="document.getElementById('addCourierModal').style.display='flex'">+</button>
+                    <?php endif; ?>
+                  </div>
                 </div>
               </div>
               <div class="grid-2" style="gap:12px">
@@ -173,20 +189,6 @@ include __DIR__ . '/../../components/head.php';
                   </div>
                   <input type="number" id="amountPaidInput" class="form-control" min="0" step="0.01" value="0" disabled
                          style="display:none;margin-top:6px" oninput="amountPaidTouched=true">
-                </div>
-              </div>
-              <div class="form-group">
-                <label class="form-label">Courier Name</label>
-                <div style="display:flex;gap:8px;align-items:center">
-                  <select id="courierName" class="form-control">
-                    <option value="">— None —</option>
-                    <?php foreach ($couriers as $c): ?>
-                    <option value="<?= e($c['name']) ?>"><?= e($c['name']) ?></option>
-                    <?php endforeach; ?>
-                  </select>
-                  <?php if ($isAdmin): ?>
-                  <button type="button" class="btn btn-outline btn-sm" style="white-space:nowrap" onclick="document.getElementById('addCourierModal').style.display='flex'">+ Add Courier</button>
-                  <?php endif; ?>
                 </div>
               </div>
             </div>
