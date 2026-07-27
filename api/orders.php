@@ -120,7 +120,7 @@ function adjustOrderStock(PDO $pdo, int $orderDbId, string $adjType, int $direct
 // action, the "Exchange" action, and the whole-order "Returned" status
 // change, so a line already partially returned is never double-counted
 // no matter which path triggers the rest of it.
-function returnOrderItem(PDO $pdo, array $item, int $qty, int $userId, string $orderRef, ?string $reason, bool $damaged = false): float {
+function returnOrderItem(PDO $pdo, array $item, int $qty, int $userId, string $orderRef, ?string $reason, bool $damaged = false, bool $isExchange = false): float {
     $productId = (int)($item['product_id'] ?? 0);
     $variantId = $item['variant_id'] !== null ? (int)$item['variant_id'] : null;
 
@@ -174,8 +174,8 @@ function returnOrderItem(PDO $pdo, array $item, int $qty, int $userId, string $o
     $pdo->prepare("UPDATE orders SET subtotal = GREATEST(0, subtotal - ?), total = GREATEST(0, total - ?) WHERE id=?")
         ->execute([$amount, $amount, $item['order_id']]);
 
-    $pdo->prepare("INSERT INTO order_returns (order_id,order_item_id,qty,amount,damaged,reason,returned_by) VALUES (?,?,?,?,?,?,?)")
-        ->execute([$item['order_id'], $item['id'], $qty, $amount, $damaged ? 1 : 0, $reason, $userId]);
+    $pdo->prepare("INSERT INTO order_returns (order_id,order_item_id,qty,amount,damaged,is_exchange,reason,returned_by) VALUES (?,?,?,?,?,?,?,?)")
+        ->execute([$item['order_id'], $item['id'], $qty, $amount, $damaged ? 1 : 0, $isExchange ? 1 : 0, $reason, $userId]);
 
     return $amount;
 }
@@ -526,7 +526,11 @@ if ($action === 'status' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $extra  = ', dispatched_by=?, dispatched_at=NOW()';
         $params = [$newStatus, $user['id'], $user['id'], $order['id']];
     } elseif ($newStatus === 'delivered') {
-        $extra = ', delivered_at=NOW()';
+        // COD cash is collected at the door on delivery — if the order was
+        // still 'unpaid' (i.e. not already flagged prepaid), it's paid now.
+        // This matters later: an Exchange or re-export on this order must
+        // never tell the courier to collect money again for it.
+        $extra = ", delivered_at=NOW(), payment_status=IF(payment_status='unpaid','paid',payment_status)";
     }
 
     $pdo->beginTransaction();
@@ -660,7 +664,7 @@ if ($action === 'exchange_item' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         // 1. Dispose of the old item exactly like a Return.
         $oldReason = $reason ?: "Exchanged for {$newProduct['name']}";
-        returnOrderItem($pdo, $item, $qty, $user['id'], $item['order_ref'], $oldReason, $damaged);
+        returnOrderItem($pdo, $item, $qty, $user['id'], $item['order_ref'], $oldReason, $damaged, true);
 
         // 2. Deduct stock for the new item.
         if ($newVariantId) {
@@ -791,7 +795,7 @@ if ($action === 'bulk_deliver' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$o) { $skipped[] = "$oid (not found)"; continue; }
             if ($o['status'] !== 'in_courier') { $skipped[] = "$oid (status: {$o['status']})"; continue; }
 
-            $pdo->prepare("UPDATE orders SET status='delivered', delivered_at=NOW(), updated_by=? WHERE id=?")
+            $pdo->prepare("UPDATE orders SET status='delivered', delivered_at=NOW(), updated_by=?, payment_status=IF(payment_status='unpaid','paid',payment_status) WHERE id=?")
                 ->execute([$user['id'], $o['id']]);
             $pdo->prepare("INSERT INTO order_status_log (order_id,from_status,to_status,changed_by) VALUES (?,'in_courier','delivered',?)")
                 ->execute([$o['id'], $user['id']]);

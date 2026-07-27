@@ -88,6 +88,16 @@ if ($pagePhones) {
     }
 }
 
+// Exchanged orders (scoped to the orders on this page)
+$exchangedOrderIds = [];
+$pageOrderDbIds = array_column($orders, 'id');
+if ($pageOrderDbIds) {
+    $placeholders = implode(',', array_fill(0, count($pageOrderDbIds), '?'));
+    $exStmt = $pdo->prepare("SELECT DISTINCT order_id FROM order_returns WHERE is_exchange=1 AND order_id IN ($placeholders)");
+    $exStmt->execute($pageOrderDbIds);
+    $exchangedOrderIds = array_flip($exStmt->fetchAll(PDO::FETCH_COLUMN));
+}
+
 // Status counts for tab bar
 $statusCounts = [];
 foreach ($validStatuses as $s) {
@@ -288,6 +298,7 @@ include __DIR__ . '/../../components/head.php';
               $isBlacklisted = $o['customer_phone'] && isset($blacklistSet[$o['customer_phone']]);
               $rowDate       = date('Y-m-d', strtotime($o['created_at']));
               $isDuplicate   = $o['customer_phone'] && isset($duplicateKeys[$o['customer_phone'] . '|' . $rowDate]);
+              $isExchanged   = isset($exchangedOrderIds[$o['id']]);
               $rowStyle      = $isBlacklisted ? 'background:#fef2f2' : ($isDuplicate ? 'background:#fefce8' : '');
             ?>
             <tr style="<?= $rowStyle ?>">
@@ -304,6 +315,9 @@ include __DIR__ . '/../../components/head.php';
                 <div style="font-size:.68rem;font-weight:700;color:#b91c1c;margin-top:2px">⚠ Blacklisted</div>
                 <?php elseif ($isDuplicate): ?>
                 <div style="font-size:.68rem;font-weight:700;color:#92400e;margin-top:2px">⚠ Duplicate today</div>
+                <?php endif; ?>
+                <?php if ($isExchanged): ?>
+                <div style="font-size:.68rem;font-weight:700;color:#6d28d9;margin-top:2px">&#8644; Exchanged</div>
                 <?php endif; ?>
               </td>
               <td class="text-muted" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="<?= e($o['product_names'] ?? '') ?>"><?= e($o['product_names'] ?? '—') ?></td>

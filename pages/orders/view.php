@@ -42,6 +42,14 @@ $returnedStmt = $pdo->prepare("SELECT COALESCE(SUM(amount),0) FROM order_returns
 $returnedStmt->execute([$order['id']]);
 $totalReturned = (float)$returnedStmt->fetchColumn();
 
+// Which order_item rows had an Exchange (not just a plain Return) against
+// them — a real flag, not the free-text reason, since staff can overwrite
+// the reason with their own note and we'd otherwise lose the signal.
+$exchangedItemIds = $pdo->prepare("SELECT DISTINCT order_item_id FROM order_returns WHERE order_id=? AND is_exchange=1");
+$exchangedItemIds->execute([$order['id']]);
+$exchangedItemIds = array_flip($exchangedItemIds->fetchAll(PDO::FETCH_COLUMN));
+$orderHasExchange = !empty($exchangedItemIds);
+
 // Status log
 $logStmt = $pdo->prepare("
     SELECT osl.*, u.name AS changed_by_name
@@ -133,6 +141,9 @@ include __DIR__ . '/../../components/head.php';
           <div style="display:flex;align-items:center;gap:10px">
             <h1 style="font-size:1.25rem;font-weight:700"><?= e($order['order_id']) ?></h1>
             <span class="badge <?= $badge ?>"><?= ucfirst(str_replace('_', ' ', $order['status'])) ?></span>
+            <?php if ($orderHasExchange): ?>
+            <span class="badge" style="background:#ede9fe;color:#6d28d9">&#8644; Exchanged</span>
+            <?php endif; ?>
           </div>
           <p style="font-size:.82rem;color:var(--text-secondary);margin-top:2px">
             Placed <?= date('d M Y, h:i A', strtotime($order['created_at'])) ?>
@@ -198,7 +209,9 @@ include __DIR__ . '/../../components/head.php';
                           <div style="font-size:.72rem;color:var(--text-muted)"><?= e($item['pid']) ?></div>
                           <?php endif; ?>
                           <?php if ($item['returned_qty'] > 0): ?>
-                          <div style="font-size:.68rem;font-weight:700;color:#f97316;margin-top:2px">&#8617; <?= (int)$item['returned_qty'] ?> returned</div>
+                          <div style="font-size:.68rem;font-weight:700;color:<?= isset($exchangedItemIds[$item['id']]) ? '#8b5cf6' : '#f97316' ?>;margin-top:2px">
+                            &#8617; <?= (int)$item['returned_qty'] ?> <?= isset($exchangedItemIds[$item['id']]) ? 'exchanged' : 'returned' ?>
+                          </div>
                           <?php endif; ?>
                         </div>
                       </div>
