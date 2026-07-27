@@ -112,44 +112,59 @@ function adjustOrderStock(PDO $pdo, int $orderDbId, string $adjType, int $direct
     }
 }
 
-// Restores stock for a specific qty of a single order item, records the
+// Un-deducts stock for a specific qty of a single order item — unless
+// it's coming back damaged, in which case it's logged to Damaged Stock
+// instead of being put back up for sale. Either way it records the
 // return against that line (returned_qty) and the order (order_returns +
-// a reduced subtotal/total), and logs it in the inventory log too. Shared
-// by the standalone per-item "Return" action and by the whole-order
-// "Returned" status change, so a line already partially returned is never
-// double-restocked no matter which path triggers the rest of it.
-function returnOrderItem(PDO $pdo, array $item, int $qty, int $userId, string $orderRef, ?string $reason): float {
+// a reduced subtotal/total). Shared by the standalone per-item "Return"
+// action, the "Exchange" action, and the whole-order "Returned" status
+// change, so a line already partially returned is never double-counted
+// no matter which path triggers the rest of it.
+function returnOrderItem(PDO $pdo, array $item, int $qty, int $userId, string $orderRef, ?string $reason, bool $damaged = false): float {
     $productId = (int)($item['product_id'] ?? 0);
     $variantId = $item['variant_id'] !== null ? (int)$item['variant_id'] : null;
 
     if ($productId) {
-        if ($variantId) {
-            $vRow = $pdo->prepare("SELECT qty_adj FROM product_variants WHERE id=? AND product_id=?");
-            $vRow->execute([$variantId, $productId]);
-            if ($vRow->fetch()) {
-                $pdo->prepare("UPDATE product_variants SET qty_adj = qty_adj + ? WHERE id=?")->execute([$qty, $variantId]);
-            }
-        }
+        if ($damaged) {
+            // The unit isn't sellable — don't touch qty_adj/quantity at all,
+            // just record the loss (mirrors api/inventory.php's log_damage).
+            $pdo->prepare("INSERT INTO damaged_products (product_id, qty, reason, logged_by) VALUES (?,?,?,?)")
+                ->execute([$productId, $qty, $reason ?: "Damaged on return ({$orderRef})", $userId]);
 
-        $row = $pdo->prepare("SELECT quantity, min_stock_level FROM products WHERE id=?");
-        $row->execute([$productId]);
-        $product = $row->fetch();
-        if ($product) {
-            $qtyBefore = (int)$product['quantity'];
-            $min       = (int)$product['min_stock_level'];
-
+            $qtyStmt = $pdo->prepare("SELECT quantity FROM products WHERE id=?");
+            $qtyStmt->execute([$productId]);
+            $qtyNow = (int)$qtyStmt->fetchColumn();
+            $pdo->prepare("INSERT INTO stock_adjustments (product_id,type,qty_before,qty_change,qty_after,reference,reason,adjusted_by) VALUES (?,'damaged',?,0,?,?,?,?)")
+                ->execute([$productId, $qtyNow, $qtyNow, $orderRef, $reason ?: 'Damaged on return, not restocked', $userId]);
+        } else {
             if ($variantId) {
-                $sumStmt = $pdo->prepare("SELECT COALESCE(SUM(qty_adj),0) FROM product_variants WHERE product_id=?");
-                $sumStmt->execute([$productId]);
-                $qtyAfter = (int)$sumStmt->fetchColumn();
-            } else {
-                $qtyAfter = $qtyBefore + $qty;
+                $vRow = $pdo->prepare("SELECT qty_adj FROM product_variants WHERE id=? AND product_id=?");
+                $vRow->execute([$variantId, $productId]);
+                if ($vRow->fetch()) {
+                    $pdo->prepare("UPDATE product_variants SET qty_adj = qty_adj + ? WHERE id=?")->execute([$qty, $variantId]);
+                }
             }
-            $stockStatus = $qtyAfter <= 0 ? 'outofstock' : ($qtyAfter <= 2 ? 'critical' : ($qtyAfter <= $min ? 'lowstock' : 'instock'));
 
-            $pdo->prepare("UPDATE products SET quantity=?, stock_status=? WHERE id=?")->execute([$qtyAfter, $stockStatus, $productId]);
-            $pdo->prepare("INSERT INTO stock_adjustments (product_id,type,qty_before,qty_change,qty_after,reference,reason,adjusted_by) VALUES (?,'return',?,?,?,?,?,?)")
-                ->execute([$productId, $qtyBefore, $qty, $qtyAfter, $orderRef, $reason, $userId]);
+            $row = $pdo->prepare("SELECT quantity, min_stock_level FROM products WHERE id=?");
+            $row->execute([$productId]);
+            $product = $row->fetch();
+            if ($product) {
+                $qtyBefore = (int)$product['quantity'];
+                $min       = (int)$product['min_stock_level'];
+
+                if ($variantId) {
+                    $sumStmt = $pdo->prepare("SELECT COALESCE(SUM(qty_adj),0) FROM product_variants WHERE product_id=?");
+                    $sumStmt->execute([$productId]);
+                    $qtyAfter = (int)$sumStmt->fetchColumn();
+                } else {
+                    $qtyAfter = $qtyBefore + $qty;
+                }
+                $stockStatus = $qtyAfter <= 0 ? 'outofstock' : ($qtyAfter <= 2 ? 'critical' : ($qtyAfter <= $min ? 'lowstock' : 'instock'));
+
+                $pdo->prepare("UPDATE products SET quantity=?, stock_status=? WHERE id=?")->execute([$qtyAfter, $stockStatus, $productId]);
+                $pdo->prepare("INSERT INTO stock_adjustments (product_id,type,qty_before,qty_change,qty_after,reference,reason,adjusted_by) VALUES (?,'return',?,?,?,?,?,?)")
+                    ->execute([$productId, $qtyBefore, $qty, $qtyAfter, $orderRef, $reason, $userId]);
+            }
         }
     }
 
@@ -159,8 +174,8 @@ function returnOrderItem(PDO $pdo, array $item, int $qty, int $userId, string $o
     $pdo->prepare("UPDATE orders SET subtotal = GREATEST(0, subtotal - ?), total = GREATEST(0, total - ?) WHERE id=?")
         ->execute([$amount, $amount, $item['order_id']]);
 
-    $pdo->prepare("INSERT INTO order_returns (order_id,order_item_id,qty,amount,reason,returned_by) VALUES (?,?,?,?,?,?)")
-        ->execute([$item['order_id'], $item['id'], $qty, $amount, $reason, $userId]);
+    $pdo->prepare("INSERT INTO order_returns (order_id,order_item_id,qty,amount,damaged,reason,returned_by) VALUES (?,?,?,?,?,?,?)")
+        ->execute([$item['order_id'], $item['id'], $qty, $amount, $damaged ? 1 : 0, $reason, $userId]);
 
     return $amount;
 }
@@ -555,10 +570,11 @@ if ($action === 'status' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 if ($action === 'return_item' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$isAdmin && !$isSuper) { echo json_encode(['success' => false, 'message' => 'Unauthorized']); exit; }
 
-    $body   = json_decode(file_get_contents('php://input'), true);
-    $itemId = (int)($body['item_id'] ?? 0);
-    $qty    = (int)($body['qty']     ?? 0);
-    $reason = trim($body['reason']   ?? '');
+    $body    = json_decode(file_get_contents('php://input'), true);
+    $itemId  = (int)($body['item_id'] ?? 0);
+    $qty     = (int)($body['qty']     ?? 0);
+    $reason  = trim($body['reason']   ?? '');
+    $damaged = !empty($body['damaged']);
 
     if (!$itemId || $qty < 1) { echo json_encode(['success' => false, 'message' => 'Invalid data']); exit; }
 
@@ -577,12 +593,113 @@ if ($action === 'return_item' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $pdo->beginTransaction();
     try {
-        $amount = returnOrderItem($pdo, $item, $qty, $user['id'], $item['order_ref'], $reason ?: null);
+        $amount = returnOrderItem($pdo, $item, $qty, $user['id'], $item['order_ref'], $reason ?: null, $damaged);
         $pdo->commit();
         echo json_encode(['success' => true, 'amount' => $amount]);
     } catch (Exception $e) {
         $pdo->rollBack();
         echo json_encode(['success' => false, 'message' => 'Failed to process return.']);
+    }
+    exit;
+}
+
+// ── EXCHANGE ORDER ITEM (admin + supervisor) ──────────────────
+// Swaps a quantity of one order item for a different product/variant on
+// the same order: the old item is disposed of exactly like a Return
+// (restocked, or logged to Damaged Stock if it came back damaged), the
+// new item's stock is deducted and added as its own line, and the order
+// total is adjusted by the net price difference — not just subtracted.
+if ($action === 'exchange_item' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!$isAdmin && !$isSuper) { echo json_encode(['success' => false, 'message' => 'Unauthorized']); exit; }
+
+    $body           = json_decode(file_get_contents('php://input'), true);
+    $itemId         = (int)($body['item_id']         ?? 0);
+    $qty            = (int)($body['qty']             ?? 0);
+    $reason         = trim($body['reason']           ?? '');
+    $damaged        = !empty($body['damaged']);
+    $newProductId   = (int)($body['new_product_id']  ?? 0);
+    $newVariantId   = (int)($body['new_variant_id']  ?? 0) ?: null;
+    $newQty         = (int)($body['new_qty']         ?? 0) ?: $qty;
+
+    if (!$itemId || $qty < 1 || !$newProductId || $newQty < 1) {
+        echo json_encode(['success' => false, 'message' => 'Invalid data']); exit;
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT oi.*, o.order_id AS order_ref, o.stock_deducted
+        FROM order_items oi JOIN orders o ON o.id = oi.order_id
+        WHERE oi.id = ?
+    ");
+    $stmt->execute([$itemId]);
+    $item = $stmt->fetch();
+    if (!$item) { echo json_encode(['success' => false, 'message' => 'Order item not found']); exit; }
+    if (!$item['stock_deducted']) { echo json_encode(['success' => false, 'message' => 'This order has not been dispatched yet — nothing to exchange.']); exit; }
+
+    $remaining = (int)$item['qty'] - (int)$item['returned_qty'];
+    if ($qty > $remaining) { echo json_encode(['success' => false, 'message' => "Only $remaining unit(s) left to exchange."]); exit; }
+
+    $newProduct = $pdo->prepare("SELECT id, name, sell_price, buy_price FROM products WHERE id=? AND status='active'");
+    $newProduct->execute([$newProductId]);
+    $newProduct = $newProduct->fetch();
+    if (!$newProduct) { echo json_encode(['success' => false, 'message' => 'Replacement product not found']); exit; }
+
+    $newVariant = null;
+    if ($newVariantId) {
+        $vStmt = $pdo->prepare("SELECT id, label, value, sell_price, buy_price FROM product_variants WHERE id=? AND product_id=?");
+        $vStmt->execute([$newVariantId, $newProductId]);
+        $newVariant = $vStmt->fetch();
+        if (!$newVariant) { $newVariantId = null; }
+    }
+
+    $newSellPrice  = (float)($newVariant ? $newVariant['sell_price'] : $newProduct['sell_price']);
+    $newBuyPrice   = (float)($newVariant ? $newVariant['buy_price']  : $newProduct['buy_price']);
+    $newTotal      = round($newSellPrice * $newQty, 2);
+    $newVariantInfo = $newVariant ? ($newVariant['label'] . ': ' . $newVariant['value']) : null;
+
+    $pdo->beginTransaction();
+    try {
+        // 1. Dispose of the old item exactly like a Return.
+        $oldReason = $reason ?: "Exchanged for {$newProduct['name']}";
+        returnOrderItem($pdo, $item, $qty, $user['id'], $item['order_ref'], $oldReason, $damaged);
+
+        // 2. Deduct stock for the new item.
+        if ($newVariantId) {
+            $pdo->prepare("UPDATE product_variants SET qty_adj = qty_adj - ? WHERE id=?")->execute([$newQty, $newVariantId]);
+            $sumStmt = $pdo->prepare("SELECT COALESCE(SUM(qty_adj),0) FROM product_variants WHERE product_id=?");
+            $sumStmt->execute([$newProductId]);
+            $qtyAfter = (int)$sumStmt->fetchColumn();
+        } else {
+            $qtyAfter = null;
+        }
+        $prodRow = $pdo->prepare("SELECT quantity, min_stock_level FROM products WHERE id=?");
+        $prodRow->execute([$newProductId]);
+        $prodRow  = $prodRow->fetch();
+        $qtyBefore = (int)$prodRow['quantity'];
+        $min       = (int)$prodRow['min_stock_level'];
+        if ($qtyAfter === null) { $qtyAfter = $qtyBefore - $newQty; }
+        $stockStatus = $qtyAfter <= 0 ? 'outofstock' : ($qtyAfter <= 2 ? 'critical' : ($qtyAfter <= $min ? 'lowstock' : 'instock'));
+
+        $pdo->prepare("UPDATE products SET quantity=?, stock_status=? WHERE id=?")->execute([$qtyAfter, $stockStatus, $newProductId]);
+        $pdo->prepare("INSERT INTO stock_adjustments (product_id,type,qty_before,qty_change,qty_after,reference,reason,adjusted_by) VALUES (?,'sale',?,?,?,?,?,?)")
+            ->execute([$newProductId, $qtyBefore, -$newQty, $qtyAfter, $item['order_ref'], "Exchange — replaced with {$newProduct['name']}", $user['id']]);
+
+        // 3. Add the new item as its own line on the same order.
+        $pdo->prepare("
+            INSERT INTO order_items (order_id, product_id, product_name, variant_id, variant_info, qty, sell_price, buy_price, total)
+            VALUES (?,?,?,?,?,?,?,?,?)
+        ")->execute([$item['order_id'], $newProductId, $newProduct['name'], $newVariantId, $newVariantInfo, $newQty, $newSellPrice, $newBuyPrice, $newTotal]);
+
+        // 4. The order total was already reduced by the old item's value inside
+        // returnOrderItem() — now add the new item's value on top, so the net
+        // effect is the price difference either way.
+        $pdo->prepare("UPDATE orders SET subtotal = subtotal + ?, total = total + ? WHERE id=?")
+            ->execute([$newTotal, $newTotal, $item['order_id']]);
+
+        $pdo->commit();
+        echo json_encode(['success' => true]);
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        echo json_encode(['success' => false, 'message' => 'Failed to process exchange.']);
     }
     exit;
 }

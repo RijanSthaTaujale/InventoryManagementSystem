@@ -172,7 +172,7 @@ include __DIR__ . '/../../components/head.php';
                     <th style="width:110px">Unit Price</th>
                     <th style="width:110px">Total</th>
                     <?php if ($isAdmin): ?><th style="width:100px">Buy Price</th><?php endif; ?>
-                    <?php if (($isAdmin || $isSuper) && $order['stock_deducted']): ?><th style="width:90px"></th><?php endif; ?>
+                    <?php if (($isAdmin || $isSuper) && $order['stock_deducted']): ?><th style="width:150px"></th><?php endif; ?>
                   </tr>
                 </thead>
                 <tbody>
@@ -212,8 +212,12 @@ include __DIR__ . '/../../components/head.php';
                     <?php if (($isAdmin || $isSuper) && $order['stock_deducted']): ?>
                     <td>
                       <?php if ($remainingQty > 0): ?>
-                      <button class="btn btn-outline btn-xs"
-                              onclick="openReturnModal(<?= (int)$item['id'] ?>, <?= htmlspecialchars(json_encode($item['product_name']), ENT_QUOTES) ?>, <?= $remainingQty ?>)">Return</button>
+                      <div style="display:flex;gap:5px">
+                        <button class="btn btn-outline btn-xs"
+                                onclick="openReturnModal(<?= (int)$item['id'] ?>, <?= htmlspecialchars(json_encode($item['product_name']), ENT_QUOTES) ?>, <?= $remainingQty ?>)">Return</button>
+                        <button class="btn btn-outline btn-xs"
+                                onclick="openExchangeModal(<?= (int)$item['id'] ?>, <?= htmlspecialchars(json_encode($item['product_name']), ENT_QUOTES) ?>, <?= $remainingQty ?>)">Exchange</button>
+                      </div>
                       <?php endif; ?>
                     </td>
                     <?php endif; ?>
@@ -417,10 +421,57 @@ include __DIR__ . '/../../components/head.php';
         <label class="form-label">Reason</label>
         <input type="text" id="returnReason" class="form-control" placeholder="e.g. Customer kept only 1 of 2 items">
       </div>
+      <div class="form-group" style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="returnDamaged" style="width:16px;height:16px">
+        <label for="returnDamaged" style="font-size:.85rem;color:var(--text-secondary);margin:0;cursor:pointer">
+          Item came back damaged — log to Damaged Stock instead of restocking
+        </label>
+      </div>
     </div>
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
       <button class="btn btn-outline btn-sm" onclick="document.getElementById('returnModal').style.display='none'">Cancel</button>
       <button class="btn btn-primary btn-sm" onclick="submitReturn()">Confirm Return</button>
+    </div>
+  </div>
+</div>
+
+<!-- Exchange item modal -->
+<div id="exchangeModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:var(--radius-xl);padding:28px;max-width:420px;width:90%;box-shadow:var(--shadow-md);max-height:85vh;overflow-y:auto">
+    <div style="font-size:1.05rem;font-weight:700;margin-bottom:4px">Exchange Item</div>
+    <div style="font-size:.84rem;color:var(--text-secondary);margin-bottom:18px">Returning: <span id="exchangeItemName" style="font-weight:600"></span></div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div class="form-group">
+        <label class="form-label" id="exchangeQtyLabel">Quantity to Exchange</label>
+        <input type="number" id="exchangeQty" class="form-control" min="1" value="1">
+      </div>
+      <div class="form-group" style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="exchangeDamaged" style="width:16px;height:16px">
+        <label for="exchangeDamaged" style="font-size:.85rem;color:var(--text-secondary);margin:0;cursor:pointer">
+          Returned item is damaged — log to Damaged Stock instead of restocking
+        </label>
+      </div>
+      <div class="form-group" style="border-top:1px solid var(--border);padding-top:14px">
+        <label class="form-label">Replacement Product</label>
+        <input type="text" id="exchangeSearch" class="form-control" placeholder="Search product by name, ID or SKU...">
+        <div id="exchangeResults" style="margin-top:6px"></div>
+      </div>
+      <div class="form-group" id="exchangeVariantGroup" style="display:none">
+        <label class="form-label">Variant</label>
+        <select id="exchangeVariantSelect" class="form-control"></select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Replacement Quantity</label>
+        <input type="number" id="exchangeNewQty" class="form-control" min="1" value="1">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Reason</label>
+        <input type="text" id="exchangeReason" class="form-control" placeholder="e.g. Wrong size, customer wants Large instead">
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('exchangeModal').style.display='none'">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="submitExchange()">Confirm Exchange</button>
     </div>
   </div>
 </div>
@@ -479,21 +530,107 @@ function openReturnModal(itemId, name, maxQty) {
   document.getElementById('returnQty').max = maxQty;
   document.getElementById('returnQty').value = maxQty;
   document.getElementById('returnReason').value = '';
+  document.getElementById('returnDamaged').checked = false;
   document.getElementById('returnModal').style.display = 'flex';
 }
 
 async function submitReturn() {
-  const qty    = parseInt(document.getElementById('returnQty').value) || 0;
-  const reason = document.getElementById('returnReason').value.trim();
+  const qty     = parseInt(document.getElementById('returnQty').value) || 0;
+  const reason  = document.getElementById('returnReason').value.trim();
+  const damaged = document.getElementById('returnDamaged').checked;
   if (qty < 1) { showToast('Enter a valid quantity', 'error'); return; }
 
   const r = await fetch(`${APP_URL}/api/orders.php?action=return_item`, {
     method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ item_id: returnItemId, qty, reason })
+    body: JSON.stringify({ item_id: returnItemId, qty, reason, damaged })
   });
   const d = await r.json();
   document.getElementById('returnModal').style.display = 'none';
   if (d.success) { showToast('Return processed', 'success'); setTimeout(() => location.reload(), 700); }
+  else showToast(d.message || 'Failed', 'error');
+}
+
+let exchangeItemId = null;
+let exchangeSelectedProduct = null;
+let exchangeSearchTimer = null;
+
+function openExchangeModal(itemId, name, maxQty) {
+  exchangeItemId = itemId;
+  exchangeSelectedProduct = null;
+  document.getElementById('exchangeItemName').textContent = name;
+  document.getElementById('exchangeQtyLabel').textContent = `Quantity to Exchange (max ${maxQty})`;
+  document.getElementById('exchangeQty').max = maxQty;
+  document.getElementById('exchangeQty').value = maxQty;
+  document.getElementById('exchangeNewQty').value = maxQty;
+  document.getElementById('exchangeDamaged').checked = false;
+  document.getElementById('exchangeReason').value = '';
+  document.getElementById('exchangeSearch').value = '';
+  document.getElementById('exchangeResults').innerHTML = '';
+  document.getElementById('exchangeVariantGroup').style.display = 'none';
+  document.getElementById('exchangeVariantSelect').innerHTML = '';
+  document.getElementById('exchangeModal').style.display = 'flex';
+}
+
+document.getElementById('exchangeSearch').addEventListener('input', function() {
+  clearTimeout(exchangeSearchTimer);
+  const q = this.value.trim();
+  const resultsBox = document.getElementById('exchangeResults');
+  if (q.length < 2) { resultsBox.innerHTML = ''; return; }
+  exchangeSearchTimer = setTimeout(async () => {
+    const r = await fetch(`${APP_URL}/api/products.php?action=search&q=${encodeURIComponent(q)}`);
+    const d = await r.json();
+    resultsBox.innerHTML = (d.products || []).map((p, i) =>
+      `<div onclick="event.stopPropagation(); pickExchangeProduct(${i})" style="padding:8px;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;margin-bottom:4px;font-size:.84rem">
+        <div style="font-weight:600">${p.name}</div>
+        <div style="font-size:.74rem;color:var(--text-muted)">${p.product_id} &nbsp;·&nbsp; Rs ${p.sell_price} &nbsp;·&nbsp; ${p.quantity} in stock${p.variants.length ? ' &nbsp;·&nbsp; ' + p.variants.length + ' variant(s)' : ''}</div>
+      </div>`
+    ).join('') || '<div style="font-size:.8rem;color:var(--text-muted);padding:8px">No products found</div>';
+    window.__exchangeSearchResults = d.products || [];
+  }, 300);
+});
+
+function pickExchangeProduct(i) {
+  const p = window.__exchangeSearchResults[i];
+  exchangeSelectedProduct = p;
+  document.getElementById('exchangeSearch').value = `${p.name} (${p.product_id})`;
+  document.getElementById('exchangeResults').innerHTML = '';
+
+  const variantGroup = document.getElementById('exchangeVariantGroup');
+  const variantSelect = document.getElementById('exchangeVariantSelect');
+  if (p.variants && p.variants.length) {
+    variantSelect.innerHTML = p.variants.map(v => `<option value="${v.id}">${v.label}: ${v.value} — Rs ${v.sell_price} (${v.qty_adj} in stock)</option>`).join('');
+    variantGroup.style.display = '';
+  } else {
+    variantGroup.style.display = 'none';
+    variantSelect.innerHTML = '';
+  }
+}
+
+async function submitExchange() {
+  const qty     = parseInt(document.getElementById('exchangeQty').value) || 0;
+  const newQty  = parseInt(document.getElementById('exchangeNewQty').value) || 0;
+  const damaged = document.getElementById('exchangeDamaged').checked;
+  const reason  = document.getElementById('exchangeReason').value.trim();
+
+  if (qty < 1) { showToast('Enter a valid quantity to exchange', 'error'); return; }
+  if (!exchangeSelectedProduct) { showToast('Pick a replacement product', 'error'); return; }
+  if (newQty < 1) { showToast('Enter a valid replacement quantity', 'error'); return; }
+
+  const variantGroup = document.getElementById('exchangeVariantGroup');
+  const newVariantId = variantGroup.style.display !== 'none' ? document.getElementById('exchangeVariantSelect').value : null;
+
+  const r = await fetch(`${APP_URL}/api/orders.php?action=exchange_item`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      item_id: exchangeItemId, qty, damaged, reason,
+      new_product_id: exchangeSelectedProduct.id,
+      new_variant_id: newVariantId,
+      new_qty: newQty,
+    })
+  });
+  const d = await r.json();
+  document.getElementById('exchangeModal').style.display = 'none';
+  if (d.success) { showToast('Exchange processed', 'success'); setTimeout(() => location.reload(), 700); }
   else showToast(d.message || 'Failed', 'error');
 }
 <?php endif; ?>

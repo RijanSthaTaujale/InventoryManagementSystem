@@ -274,6 +274,7 @@ CREATE TABLE IF NOT EXISTS `order_returns` (
   `order_item_id` INT UNSIGNED   NOT NULL,
   `qty`           INT            NOT NULL,
   `amount`        DECIMAL(12,2)  NOT NULL DEFAULT 0 COMMENT 'Value deducted from order total',
+  `damaged`       TINYINT(1)     NOT NULL DEFAULT 0 COMMENT 'If true, the returned unit was logged to Damaged Stock instead of restocked',
   `reason`        TEXT           DEFAULT NULL,
   `returned_by`   INT UNSIGNED   DEFAULT NULL,
   `created_at`    DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
