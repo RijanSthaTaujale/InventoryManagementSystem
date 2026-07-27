@@ -189,12 +189,7 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $customer_email   = trim($body['customer_email']   ?? '');
     $customer_address = trim($body['customer_address'] ?? '');
     $fb_page_id       = (int)($body['fb_page_id']      ?? 0) ?: null;
-    // Staff can flag an order as already paid online (prepaid) — this only
-    // affects what the courier is told to collect, never the order's value.
-    // Payment method itself is no longer a separate field — derived from prepaid.
-    $isPrepaid        = !empty($body['prepaid']);
-    $payment_method   = $isPrepaid ? 'Prepaid' : 'Cash on Delivery';
-    $payment_status   = $isPrepaid ? 'paid' : 'unpaid';
+    $amount_paid_in   = max(0, (float)($body['amount_paid'] ?? 0));
     $shipping_method  = trim($body['shipping_method']  ?? '');
     $shipping_cost    = (float)($body['shipping_cost'] ?? 0);
     $courier_name     = trim($body['courier_name']     ?? '');
@@ -270,9 +265,20 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         ? round($subtotal * ($discount / 100), 2)
         : $discount;
     $total = max(0, $subtotal - $discountAmount + $shipping_cost);
-    // If prepaid, the full amount was collected online right now — track that
+    // Amount actually collected right now — staff can override the form's
+    // full-amount default down to 0 (COD) or any partial figure. Tracked
     // separately from $total, since $total can later change via an Exchange.
-    $amount_paid = $payment_status === 'paid' ? $total : 0;
+    $amount_paid = min($amount_paid_in, $total);
+    if ($amount_paid <= 0) {
+        $payment_status = 'unpaid';
+        $payment_method = 'Cash on Delivery';
+    } elseif ($amount_paid >= $total) {
+        $payment_status = 'paid';
+        $payment_method = 'Prepaid';
+    } else {
+        $payment_status = 'partial';
+        $payment_method = 'Partial Payment';
+    }
 
     // Generate order_id: ORD-YYYYMMDD-XXXX
     $last = $pdo->query("SELECT order_id FROM orders ORDER BY id DESC LIMIT 1")->fetchColumn();
@@ -382,9 +388,7 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $customer_email   = trim($body['customer_email']   ?? '');
     $customer_address = trim($body['customer_address'] ?? '');
     $fb_page_id       = (int)($body['fb_page_id']      ?? 0) ?: null;
-    $isPrepaid        = !empty($body['prepaid']);
-    $payment_method   = $isPrepaid ? 'Prepaid' : 'Cash on Delivery';
-    $payment_status   = $isPrepaid ? 'paid' : 'unpaid';
+    $amount_paid_in   = max(0, (float)($body['amount_paid'] ?? 0));
     $shipping_method  = trim($body['shipping_method']  ?? '');
     $shipping_cost    = (float)($body['shipping_cost'] ?? 0);
     $courier_name     = trim($body['courier_name']     ?? '');
@@ -460,8 +464,18 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         : $discount;
     $total = max(0, $subtotal - $discountAmount + $shipping_cost);
     // Editing only happens pre-dispatch, so nothing could have been collected
-    // yet — safe to just recompute the same way order creation does.
-    $amount_paid = $payment_status === 'paid' ? $total : 0;
+    // by the courier yet — safe to just recompute the same way order creation does.
+    $amount_paid = min($amount_paid_in, $total);
+    if ($amount_paid <= 0) {
+        $payment_status = 'unpaid';
+        $payment_method = 'Cash on Delivery';
+    } elseif ($amount_paid >= $total) {
+        $payment_status = 'paid';
+        $payment_method = 'Prepaid';
+    } else {
+        $payment_status = 'partial';
+        $payment_method = 'Partial Payment';
+    }
 
     $pdo->beginTransaction();
     try {
@@ -535,11 +549,11 @@ if ($action === 'status' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $extra  = ', dispatched_by=?, dispatched_at=NOW()';
         $params = [$newStatus, $user['id'], $user['id'], $order['id']];
     } elseif ($newStatus === 'delivered') {
-        // COD cash is collected at the door on delivery — if the order was
-        // still 'unpaid' (i.e. not already flagged prepaid), it's paid now.
+        // Whatever's still owed is collected at the door on delivery — if the
+        // order was 'unpaid' or only 'partial'ly prepaid, it's fully paid now.
         // This matters later: an Exchange or re-export on this order must
         // never tell the courier to collect money again for it.
-        $extra = ", delivered_at=NOW(), amount_paid=IF(payment_status='unpaid',total,amount_paid), payment_status=IF(payment_status='unpaid','paid',payment_status)";
+        $extra = ", delivered_at=NOW(), amount_paid=IF(payment_status IN ('unpaid','partial'),total,amount_paid), payment_status=IF(payment_status IN ('unpaid','partial'),'paid',payment_status)";
     }
 
     $pdo->beginTransaction();
@@ -804,7 +818,7 @@ if ($action === 'bulk_deliver' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$o) { $skipped[] = "$oid (not found)"; continue; }
             if ($o['status'] !== 'in_courier') { $skipped[] = "$oid (status: {$o['status']})"; continue; }
 
-            $pdo->prepare("UPDATE orders SET status='delivered', delivered_at=NOW(), updated_by=?, amount_paid=IF(payment_status='unpaid',total,amount_paid), payment_status=IF(payment_status='unpaid','paid',payment_status) WHERE id=?")
+            $pdo->prepare("UPDATE orders SET status='delivered', delivered_at=NOW(), updated_by=?, amount_paid=IF(payment_status IN ('unpaid','partial'),total,amount_paid), payment_status=IF(payment_status IN ('unpaid','partial'),'paid',payment_status) WHERE id=?")
                 ->execute([$user['id'], $o['id']]);
             $pdo->prepare("INSERT INTO order_status_log (order_id,from_status,to_status,changed_by) VALUES (?,'in_courier','delivered',?)")
                 ->execute([$o['id'], $user['id']]);

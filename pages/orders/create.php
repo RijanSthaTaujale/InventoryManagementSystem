@@ -166,11 +166,8 @@ include __DIR__ . '/../../components/head.php';
                   </select>
                 </div>
                 <div class="form-group">
-                  <label class="form-label">&nbsp;</label>
-                  <div style="display:flex;align-items:center;gap:8px;height:38px">
-                    <input type="checkbox" id="prepaidCheckbox" style="width:16px;height:16px">
-                    <label for="prepaidCheckbox" style="font-size:.88rem;font-weight:600;color:var(--text);margin:0;cursor:pointer">Prepaid</label>
-                  </div>
+                  <label class="form-label">Amount Paid</label>
+                  <input type="number" id="amountPaidInput" class="form-control" min="0" step="0.01" value="0" oninput="amountPaidTouched=true">
                 </div>
               </div>
               <div class="form-group">
@@ -303,6 +300,7 @@ const EDIT_ORDER = <?= json_encode([
     'shipping_method' => $order['shipping_method'],
     'payment_method'  => $order['payment_method'],
     'payment_status'  => $order['payment_status'],
+    'amount_paid'     => $order['amount_paid'],
     'courier_name'    => $order['courier_name'],
     'discount'        => $order['discount'],
     'discount_type'   => $order['discount_type'],
@@ -320,6 +318,9 @@ const EDIT_ORDER = <?= json_encode([
 ]) ?>;
 <?php endif; ?>
 let items = IS_EDIT ? EDIT_ORDER.items : [];
+// Amount Paid defaults to the running total (assume fully prepaid) until the
+// user manually edits it — then it stops auto-following the total.
+let amountPaidTouched = false;
 
 // ── Product Search ───────────────────────────────────────────
 const searchInput = document.getElementById('productSearch');
@@ -456,6 +457,10 @@ function recalc() {
   document.getElementById('sumDiscount').textContent  = `- ${CURRENCY} ${discount.toLocaleString()}`;
   document.getElementById('sumShipping').textContent  = `${CURRENCY} ${shipping.toLocaleString()}`;
   document.getElementById('sumTotal').textContent     = `${CURRENCY} ${total.toLocaleString()}`;
+
+  if (!amountPaidTouched) {
+    document.getElementById('amountPaidInput').value = total.toFixed(2);
+  }
 }
 
 // ── Blacklist check ──────────────────────────────────────────
@@ -573,7 +578,7 @@ async function submitOrder() {
     customer_phone:   custPhone,
     customer_address: custAddress,
     fb_page_id:       document.getElementById('fbPage').value || null,
-    prepaid:          document.getElementById('prepaidCheckbox').checked,
+    amount_paid:      Math.max(0, parseFloat(document.getElementById('amountPaidInput').value) || 0),
     shipping_method:  sel.value,
     shipping_cost:    shipping,
     courier_name:     document.getElementById('courierName').value.trim(),
@@ -618,7 +623,8 @@ if (IS_EDIT) {
   document.getElementById('custAddress').value = EDIT_ORDER.customer_address || '';
   if (EDIT_ORDER.fb_page_id) document.getElementById('fbPage').value = EDIT_ORDER.fb_page_id;
   if (EDIT_ORDER.shipping_method) document.getElementById('shippingMethod').value = EDIT_ORDER.shipping_method;
-  document.getElementById('prepaidCheckbox').checked = EDIT_ORDER.payment_status === 'paid';
+  document.getElementById('amountPaidInput').value = EDIT_ORDER.amount_paid || 0;
+  amountPaidTouched = true; // it's a real saved value — don't let recalc() below overwrite it
   if (EDIT_ORDER.courier_name) {
     const courierSel = document.getElementById('courierName');
     if (![...courierSel.options].some(o => o.value === EDIT_ORDER.courier_name)) {
