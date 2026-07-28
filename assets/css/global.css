@@ -54,10 +54,10 @@ button,input,select,textarea{font-family:inherit;font-size:inherit}
 .topbar-toggle:hover{background:var(--bg)}
 .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:190}
 .sidebar-overlay.open{display:block}
-.topbar-search{flex:1;max-width:400px;display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--border);border-radius:20px;padding:7px 14px;color:var(--text-muted)}
+.topbar-search{flex:1;min-width:0;max-width:400px;display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--border);border-radius:20px;padding:7px 14px;color:var(--text-muted)}
 .topbar-search input{border:none;background:none;outline:none;flex:1;color:var(--text);font-size:.875rem}
 .topbar-search input::placeholder{color:var(--text-muted)}
-.topbar-actions{display:flex;align-items:center;gap:6px;margin-left:auto}
+.topbar-actions{display:flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0}
 .topbar-icon-btn{width:36px;height:36px;background:none;border:none;cursor:pointer;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);position:relative;transition:background var(--transition)}
 .topbar-icon-btn:hover{background:var(--bg)}
 .notif-dot{width:7px;height:7px;background:var(--accent-red);border-radius:50%;position:absolute;top:6px;right:6px;border:2px solid var(--surface)}
@@ -180,6 +180,14 @@ button,input,select,textarea{font-family:inherit;font-size:inherit}
 @media(max-width:900px){.sidebar{transform:translateX(-100%)}.sidebar.open{transform:translateX(0)}.topbar{left:0}.main-content{margin-left:0}.grid-4{grid-template-columns:repeat(2,1fr)}.topbar-toggle{display:flex}.flex-between{flex-wrap:wrap;gap:10px}.grid-sidebar{grid-template-columns:1fr!important}.grid-stat-4,.grid-stat-5{grid-template-columns:repeat(2,1fr)!important}}
 @media(max-width:600px){.grid-2,.grid-3,.grid-4{grid-template-columns:1fr}.main-content{padding:16px}.topbar{padding:0 12px;gap:8px}.topbar-search{max-width:none}.stat-card{padding:14px}.grid-stat-4,.grid-stat-5{grid-template-columns:repeat(2,1fr)!important}.grid-2col{grid-template-columns:1fr!important}}
 @media(max-width:420px){.grid-stat-4,.grid-stat-5{grid-template-columns:1fr!important}}
+/* Grid items default to min-width:auto, so a track holding a wide table or
+   other unshrinkable content refuses to shrink to fit its column even after
+   the column count above collapses to 1 — the same min-width:auto issue
+   fixed for .app-shell's flex children, recurring one level deeper. Without
+   this the content silently spills past the viewport and is clipped
+   invisible by html,body's overflow-x:hidden rather than causing visible
+   page scroll. */
+.grid-sidebar>*,.grid-2col>*,.grid-2>*,.grid-3>*,.grid-4>*,.grid-stat-4>*,.grid-stat-5>*{min-width:0}
 /* Filter-bar date inputs and selects across list pages are all sized with
    style="width:auto", which makes the browser size them to their own native
    content (a date picker's own width, a <select>'s widest option) with no
