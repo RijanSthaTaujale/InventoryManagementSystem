@@ -395,8 +395,8 @@ include __DIR__ . '/../../components/head.php';
                   <a href="<?= APP_URL ?>/pages/orders/create.php?edit=<?= urlencode($o['order_id']) ?>" class="btn btn-outline btn-xs">Edit</a>
                   <?php endif; ?>
                   <?php if (!empty($o['remarks'])): ?>
-                  <span title="<?= e($o['remarks']) ?>" style="display:inline-flex;color:var(--text-muted);cursor:help">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  <span title="<?= e($o['remarks']) ?>" style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;flex-shrink:0;border-radius:50%;background:#fef3c7;color:#b45309;cursor:help;box-shadow:0 0 0 1px #fde68a">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                   </span>
                   <?php endif; ?>
                   <?php if ($isAdmin): ?>
