@@ -229,7 +229,7 @@ include __DIR__ . '/../components/head.php';
             <div class="card-title">Dispatched By Day</div>
             <div class="card-sub">Orders dispatched and revenue per day in the selected range</div>
           </div>
-          <form method="GET" style="display:flex;gap:8px;align-items:center">
+          <form method="GET" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <input type="date" name="disp_from" value="<?= e($dispFrom) ?>" class="form-control" style="width:auto" title="From date">
             <input type="date" name="disp_to" value="<?= e($dispTo) ?>" class="form-control" style="width:auto" title="To date">
             <button type="submit" class="btn btn-primary btn-sm">Filter</button>
@@ -268,7 +268,7 @@ include __DIR__ . '/../components/head.php';
             <div class="card-title">Product Performance</div>
             <div class="card-sub">Units sold per product in the selected range</div>
           </div>
-          <form method="GET" style="display:flex;gap:8px;align-items:center">
+          <form method="GET" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <input type="date" name="perf_from" value="<?= e($perfFrom) ?>" class="form-control" style="width:auto" title="From date">
             <input type="date" name="perf_to" value="<?= e($perfTo) ?>" class="form-control" style="width:auto" title="To date">
             <button type="submit" class="btn btn-primary btn-sm">Filter</button>

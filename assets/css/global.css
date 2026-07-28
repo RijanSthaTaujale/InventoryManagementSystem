@@ -180,3 +180,11 @@ button,input,select,textarea{font-family:inherit;font-size:inherit}
 @media(max-width:900px){.sidebar{transform:translateX(-100%)}.sidebar.open{transform:translateX(0)}.topbar{left:0}.main-content{margin-left:0}.grid-4{grid-template-columns:repeat(2,1fr)}.topbar-toggle{display:flex}.flex-between{flex-wrap:wrap;gap:10px}.grid-sidebar{grid-template-columns:1fr!important}.grid-stat-4,.grid-stat-5{grid-template-columns:repeat(2,1fr)!important}}
 @media(max-width:600px){.grid-2,.grid-3,.grid-4{grid-template-columns:1fr}.main-content{padding:16px}.topbar{padding:0 12px;gap:8px}.topbar-search{max-width:none}.stat-card{padding:14px}.grid-stat-4,.grid-stat-5{grid-template-columns:repeat(2,1fr)!important}.grid-2col{grid-template-columns:1fr!important}}
 @media(max-width:420px){.grid-stat-4,.grid-stat-5{grid-template-columns:1fr!important}}
+/* Filter-bar date inputs and selects across list pages are all sized with
+   style="width:auto", which makes the browser size them to their own native
+   content (a date picker's own width, a <select>'s widest option) with no
+   regard for the flex row they sit in — so on a phone they can visually
+   spill past their own container's edge even though the container itself
+   fits the screen fine. Forcing them to fill their row instead fixes that
+   for every page sharing this exact pattern in one place. */
+@media(max-width:600px){input[type="date"][style*="width:auto"],select[style*="width:auto"]{width:100%!important;max-width:none!important}}

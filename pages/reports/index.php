@@ -150,7 +150,7 @@ include __DIR__ . '/../../components/head.php';
         <?php foreach (['today'=>'Today','week'=>'Last 7 Days','month'=>'This Month','year'=>'This Year'] as $p=>$l): ?>
         <a href="?period=<?= $p ?>" class="btn btn-sm <?= $period===$p&&!isset($_GET['date_from'])?'btn-primary':'btn-outline' ?>"><?= $l ?></a>
         <?php endforeach; ?>
-        <form method="GET" style="display:flex;gap:6px;align-items:center;margin-left:4px">
+        <form method="GET" style="display:flex;gap:6px;align-items:center;margin-left:4px;flex-wrap:wrap">
           <input type="date" name="date_from" value="<?= $dateFrom ?>" class="form-control" style="width:auto">
           <span style="color:var(--text-muted);font-size:.85rem">to</span>
           <input type="date" name="date_to"   value="<?= $dateTo   ?>" class="form-control" style="width:auto">
