@@ -189,7 +189,7 @@ include __DIR__ . '/../../components/head.php';
                     <input type="checkbox" id="prepaidCheckbox" style="width:16px;height:16px;flex-shrink:0" onchange="togglePrepaid()">
                     <label for="prepaidCheckbox" style="font-size:.88rem;font-weight:600;color:var(--text);margin:0;cursor:pointer;white-space:nowrap">Prepaid</label>
                     <input type="number" id="amountPaidInput" class="form-control" min="0" step="0.01" value="0" disabled
-                           style="display:none;width:100px;flex-shrink:0" oninput="amountPaidTouched=true">
+                           style="display:none;width:100px;flex-shrink:0" oninput="amountPaidTouched=true; recalc();">
                   </div>
                 </div>
               </div>
@@ -234,9 +234,14 @@ include __DIR__ . '/../../components/head.php';
               </div>
               <div style="height:1px;background:var(--border);margin:4px 0"></div>
               <div style="display:flex;justify-content:space-between">
-                <span style="font-weight:700;font-size:1rem">Total</span>
+                <span style="font-weight:700;font-size:1rem">Total <span style="font-weight:500;color:var(--text-muted);font-size:.72rem">(Order Value)</span></span>
                 <span id="sumTotal" style="font-weight:700;font-size:1.1rem;color:var(--primary)"><?= $currency ?> 0</span>
               </div>
+              <div style="display:flex;justify-content:space-between">
+                <span style="font-weight:700;font-size:.9rem">Amount <span style="font-weight:500;color:var(--text-muted);font-size:.72rem">(to collect)</span></span>
+                <span id="sumAmountDue" style="font-weight:700;font-size:.95rem;color:var(--text)"><?= $currency ?> 0</span>
+              </div>
+              <div id="sumAlreadyPaidNote" style="display:none;font-size:.72rem;font-weight:700;color:#22c55e;margin-top:-2px"></div>
             </div>
           </div>
 
@@ -467,8 +472,22 @@ function recalc() {
   document.getElementById('sumShipping').textContent  = `${CURRENCY} ${shipping.toLocaleString()}`;
   document.getElementById('sumTotal').textContent     = `${CURRENCY} ${total.toLocaleString()}`;
 
-  if (document.getElementById('prepaidCheckbox').checked && !amountPaidTouched) {
+  const prepaidChecked = document.getElementById('prepaidCheckbox').checked;
+  if (prepaidChecked && !amountPaidTouched) {
     document.getElementById('amountPaidInput').value = total.toFixed(2);
+  }
+
+  const amountPaid = prepaidChecked ? (parseFloat(document.getElementById('amountPaidInput').value) || 0) : 0;
+  const amountDue  = Math.max(0, total - amountPaid);
+  const dueEl  = document.getElementById('sumAmountDue');
+  const noteEl = document.getElementById('sumAlreadyPaidNote');
+  dueEl.textContent = `${CURRENCY} ${amountDue.toLocaleString()}`;
+  dueEl.style.color = amountDue > 0 ? 'var(--text)' : '#22c55e';
+  if (amountPaid > 0) {
+    noteEl.textContent = `✓ ${CURRENCY} ${amountPaid.toLocaleString()} already paid`;
+    noteEl.style.display = '';
+  } else {
+    noteEl.style.display = 'none';
   }
 }
 
@@ -481,7 +500,8 @@ function togglePrepaid() {
   input.disabled = !checked;
   input.style.display = checked ? '' : 'none';
   amountPaidTouched = false;
-  if (checked) { recalc(); } else { input.value = 0; }
+  if (!checked) input.value = 0;
+  recalc();
 }
 
 // ── Blacklist check ──────────────────────────────────────────
