@@ -249,7 +249,7 @@ include __DIR__ . '/../../components/head.php';
       <?php endif; ?>
 
       <form method="POST" id="productForm" enctype="multipart/form-data">
-        <div style="display:grid;grid-template-columns:1fr 340px;gap:16px;align-items:start">
+        <div class="grid-sidebar" style="display:grid;grid-template-columns:1fr 340px;gap:16px;align-items:start">
 
           <!-- LEFT COLUMN -->
           <div style="display:flex;flex-direction:column;gap:16px">
@@ -332,7 +332,8 @@ include __DIR__ . '/../../components/head.php';
                 </div>
                 <button type="button" class="btn btn-outline btn-sm" onclick="addVariant()">+ Add Variant</button>
               </div>
-              <div id="variantRows" style="display:flex;flex-direction:column;gap:8px">
+              <div style="overflow-x:auto">
+              <div id="variantRows" style="display:flex;flex-direction:column;gap:8px;min-width:560px">
                 <?php foreach ($variants as $v): ?>
                 <div class="variant-row" style="display:grid;grid-template-columns:1fr 1fr 70px 90px 90px 32px;gap:8px;align-items:center;padding-bottom:8px;border-bottom:1px solid var(--border)">
                   <input type="text" name="var_label[]" class="form-control" value="<?= e($v['label']) ?>" placeholder="Label (e.g. Color)">
@@ -346,6 +347,7 @@ include __DIR__ . '/../../components/head.php';
                   <input type="text" name="var_remarks[]" class="form-control" value="<?= e($v['remarks'] ?? '') ?>" placeholder="Remarks (optional, e.g. runs small)" style="grid-column:1 / -1">
                 </div>
                 <?php endforeach; ?>
+              </div>
               </div>
               <?php if (empty($variants)): ?>
               <div id="noVariants" style="text-align:center;padding:20px;color:var(--text-muted);font-size:.83rem">No variants added</div>

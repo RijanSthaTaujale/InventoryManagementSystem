@@ -75,14 +75,14 @@ include __DIR__ . '/../../components/head.php';
         <?php endif; ?>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start">
+      <div class="grid-sidebar" style="display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start">
 
         <!-- LEFT -->
         <div style="display:flex;flex-direction:column;gap:16px">
 
           <!-- Main product card -->
           <div class="card">
-            <div style="display:grid;grid-template-columns:200px 1fr;gap:20px">
+            <div class="grid-2col" style="display:grid;grid-template-columns:200px 1fr;gap:20px">
               <!-- Image gallery -->
               <div>
                 <div style="width:200px;height:200px;background:var(--bg);border-radius:var(--radius-md);overflow:hidden;margin-bottom:8px" id="mainImg">
@@ -147,7 +147,7 @@ include __DIR__ . '/../../components/head.php';
                 <?php endif; ?>
 
                 <!-- Meta grid -->
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px">
+                <div class="grid-2col" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px">
                   <?php $meta = [
                     'Brand'    => $p['brand']         ?? '—',
                     'SKU'      => $p['sku']            ?? '—',

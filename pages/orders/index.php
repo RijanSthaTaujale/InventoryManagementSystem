@@ -213,7 +213,7 @@ include __DIR__ . '/../../components/head.php';
       </div>
 
       <!-- Stat cards -->
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+      <div class="grid-stat-4" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
         <?php foreach ([
           ['Total','all','blue',null],
           ['New','new','blue','badge-new'],

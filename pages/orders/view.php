@@ -166,7 +166,7 @@ include __DIR__ . '/../../components/head.php';
         </div>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start">
+      <div class="grid-sidebar" style="display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start">
 
         <!-- LEFT -->
         <div style="display:flex;flex-direction:column;gap:16px">

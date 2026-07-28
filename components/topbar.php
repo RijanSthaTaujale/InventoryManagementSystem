@@ -15,6 +15,11 @@ try {
 ?>
 <header class="topbar" id="topbar">
 
+  <!-- Mobile sidebar toggle (hidden on desktop via CSS) -->
+  <button class="topbar-toggle" id="sidebarToggle" aria-label="Toggle menu">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+
   <!-- Search -->
   <div class="topbar-search" style="position:relative">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -23,7 +28,7 @@ try {
     <input type="text" placeholder="Search anything..." id="globalSearch" autocomplete="off">
 
     <!-- Search results dropdown -->
-    <div id="globalSearchDropdown" style="display:none;position:absolute;top:calc(100% + 6px);left:0;width:360px;max-height:400px;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);z-index:600"></div>
+    <div id="globalSearchDropdown" class="topbar-dropdown" style="display:none;position:absolute;top:calc(100% + 6px);left:0;width:360px;max-height:400px;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);z-index:600"></div>
   </div>
 
   <!-- Actions -->
@@ -79,7 +84,7 @@ try {
     </button>
 
     <!-- Notifications dropdown (hidden by default) -->
-    <div id="notifDropdown" style="display:none;position:absolute;top:50px;right:60px;width:300px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);z-index:500;overflow:hidden">
+    <div id="notifDropdown" class="topbar-dropdown" style="display:none;position:absolute;top:50px;right:60px;width:300px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);z-index:500;overflow:hidden">
       <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
         <span style="font-weight:700;font-size:.9rem">Notifications</span>
         <?php if ($notifCount > 0): ?>
@@ -130,9 +135,15 @@ try {
 </header>
 
 <script>
-// Sidebar toggle
+// Sidebar toggle (mobile) — the overlay both dims the page and gives a
+// tap target to close the drawer without hunting for the toggle again.
 document.getElementById('sidebarToggle')?.addEventListener('click', () => {
   document.getElementById('sidebar')?.classList.toggle('open');
+  document.getElementById('sidebarOverlay')?.classList.toggle('open');
+});
+document.getElementById('sidebarOverlay')?.addEventListener('click', () => {
+  document.getElementById('sidebar')?.classList.remove('open');
+  document.getElementById('sidebarOverlay')?.classList.remove('open');
 });
 
 // Notifications dropdown

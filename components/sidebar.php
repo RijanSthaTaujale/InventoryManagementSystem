@@ -7,6 +7,7 @@ $role = $user['role'] ?? 'staff';
 $userName = $user['name'] ?? 'User';
 $userInitial = strtoupper(substr($userName, 0, 1));
 ?>
+<div class="sidebar-overlay" id="sidebarOverlay"></div>
 <aside class="sidebar" id="sidebar">
   <!-- Brand -->
   <div class="sidebar-brand">

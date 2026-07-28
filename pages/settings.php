@@ -177,7 +177,7 @@ include __DIR__ . '/../components/head.php';
           </div>
           <p style="font-size:.84rem;color:var(--text-secondary);margin-bottom:20px">Update your password to keep your account secure. We recommend using a unique password that you don't use elsewhere.</p>
  
-          <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:16px;align-items:start">
+          <div class="grid-2col" style="display:grid;grid-template-columns:1fr 1.4fr;gap:16px;align-items:start">
             <!-- Password requirements box -->
             <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:var(--radius-md);padding:14px 16px">
               <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px;font-weight:700;font-size:.84rem;color:#92400e">

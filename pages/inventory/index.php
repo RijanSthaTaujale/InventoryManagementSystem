@@ -119,7 +119,7 @@ include __DIR__ . '/../../components/head.php';
       </div>
 
       <!-- Stat cards -->
-      <div style="display:grid;grid-template-columns:repeat(<?= $isAdmin?5:4 ?>,1fr);gap:12px;margin-bottom:20px">
+      <div class="grid-stat-5" style="display:grid;grid-template-columns:repeat(<?= $isAdmin?5:4 ?>,1fr);gap:12px;margin-bottom:20px">
         <div class="stat-card">
           <div>
             <div class="stat-label">Total Units</div>
@@ -166,7 +166,7 @@ include __DIR__ . '/../../components/head.php';
         <?php endif; ?>
       </div>
 
-      <div style="display:grid;grid-template-columns:<?= $isAdmin?'1fr 280px':'1fr' ?>;gap:16px;align-items:start">
+      <div class="grid-sidebar" style="display:grid;grid-template-columns:<?= $isAdmin?'1fr 280px':'1fr' ?>;gap:16px;align-items:start">
 
         <!-- Main inventory table -->
         <div>

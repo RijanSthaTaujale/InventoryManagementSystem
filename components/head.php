@@ -12,6 +12,6 @@ $pageTitle = isset($pageTitle) ? $pageTitle . ' — ' . APP_NAME : APP_NAME;
   <link rel="icon" type="image/jpeg" href="<?= APP_URL ?>/assets/images/pompoy-favicon.jpeg"/>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
-  <link rel="stylesheet" href="<?= APP_URL ?>/assets/css/global.css"/>
+  <link rel="stylesheet" href="<?= APP_URL ?>/assets/css/global.css?v=<?= @filemtime(__DIR__ . '/../assets/css/global.css') ?: 1 ?>"/>
 </head>
 <body>

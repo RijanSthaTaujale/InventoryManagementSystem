@@ -36,7 +36,7 @@ include __DIR__ . '/../../components/head.php';
         <p style="font-size:.82rem;color:var(--text-secondary);margin-top:2px">Manage the options staff can pick from when creating or editing an order</p>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">
+      <div class="grid-2col" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">
 
         <!-- Shipping Methods -->
         <div>
