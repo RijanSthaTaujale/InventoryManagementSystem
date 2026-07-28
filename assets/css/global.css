@@ -14,6 +14,7 @@
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{font-size:15px;-webkit-font-smoothing:antialiased}
+html,body{overflow-x:hidden;max-width:100%}
 body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.5}
 a{color:var(--primary);text-decoration:none}
 a:hover{opacity:.82}
@@ -22,6 +23,14 @@ button,input,select,textarea{font-family:inherit;font-size:inherit}
 
 /* Layout */
 .app-shell{display:flex;min-height:100vh}
+/* Flex items default to min-width:auto, meaning they refuse to shrink below
+   their content's natural width — any unwrapped content anywhere on a page
+   (a header row, a wide table, a long label) was silently pushing this
+   whole wrapper, and therefore the entire page, wider than the viewport.
+   That's what made the site feel "zoomed in" on mobile: it wasn't zoomed,
+   the page itself had actually grown wider than the screen. */
+.app-shell > *{min-width:0}
+.main-content{min-width:0}
 
 /* Sidebar */
 .sidebar{width:var(--sidebar-width);background:var(--sidebar-bg);display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:200;overflow-y:auto;transition:transform var(--transition)}
