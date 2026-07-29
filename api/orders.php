@@ -209,22 +209,57 @@ function returnOrderItem(PDO $pdo, array $item, int $qty, int $userId, string $o
     return $amount;
 }
 
+// Re-derives payment_status from the order's current total/amount_paid —
+// needed wherever a claim shifts both without going through the normal
+// create/update pricing path.
+function recalcPaymentStatus(PDO $pdo, int $orderDbId): void {
+    $stmt = $pdo->prepare("SELECT total, amount_paid FROM orders WHERE id=?");
+    $stmt->execute([$orderDbId]);
+    $o = $stmt->fetch();
+    if (!$o) return;
+    $total = (float)$o['total'];
+    $paid  = (float)$o['amount_paid'];
+    $status = $paid <= 0 ? 'unpaid' : ($paid >= $total ? 'paid' : 'partial');
+    $pdo->prepare("UPDATE orders SET payment_status=? WHERE id=?")->execute([$status, $orderDbId]);
+}
+
 // Claims a quantity of an order item for a pending exchange: reduces the
 // ORIGINAL order's total now (the financial commitment happens immediately,
 // independent of physical receipt) and records the claim as pending — but
 // deliberately does NOT touch stock or returned_qty. Those only happen
 // later, in receiveExchangeReturn(), once the physical unit is actually
 // back in hand.
-function claimExchangeReturn(PDO $pdo, array $item, int $qty, int $userId, string $orderRef, ?string $reason, int $newOrderId): float {
+//
+// Whatever fraction of the original order was already paid gets credited
+// forward — proportional to this item's own value against the order's
+// total at claim time — and moved off the original order's amount_paid.
+// Without this, a customer who already paid for the old item would be
+// asked to pay for the replacement from scratch, with no accounting for
+// what they'd already covered (the caller applies the returned credit to
+// the replacement order, or — for a plain return with no replacement —
+// simply leaves it credited nowhere, matching a refund).
+//
+// $newOrderId is null for a plain return claimed via this same flow (no
+// replacement order created — see action=create's isPureReturn branch).
+function claimExchangeReturn(PDO $pdo, array $item, int $qty, int $userId, string $orderRef, ?string $reason, ?int $newOrderId): float {
     $amount = round($qty * (float)$item['sell_price'], 2);
-    $pdo->prepare("UPDATE orders SET subtotal = GREATEST(0, subtotal - ?), total = GREATEST(0, total - ?) WHERE id=?")
-        ->execute([$amount, $amount, $item['order_id']]);
+
+    $origStmt = $pdo->prepare("SELECT total, amount_paid FROM orders WHERE id=?");
+    $origStmt->execute([$item['order_id']]);
+    $orig = $origStmt->fetch();
+    $origTotal = (float)$orig['total'];
+    $paidRatio = $origTotal > 0 ? min(1, (float)$orig['amount_paid'] / $origTotal) : 0;
+    $credit = round($amount * $paidRatio, 2);
+
+    $pdo->prepare("UPDATE orders SET subtotal = GREATEST(0, subtotal - ?), total = GREATEST(0, total - ?), amount_paid = GREATEST(0, amount_paid - ?) WHERE id=?")
+        ->execute([$amount, $amount, $credit, $item['order_id']]);
     zeroOutIfNoProductLeft($pdo, (int)$item['order_id']);
+    recalcPaymentStatus($pdo, (int)$item['order_id']);
 
     $pdo->prepare("INSERT INTO order_returns (order_id,order_item_id,qty,amount,damaged,is_exchange,reason,returned_by,new_order_id) VALUES (?,?,?,?,0,1,?,?,?)")
         ->execute([$item['order_id'], $item['id'], $qty, $amount, $reason, $userId, $newOrderId]);
 
-    return $amount;
+    return $credit;
 }
 
 // Settles a pending exchange claim once the physical item is actually back
@@ -289,14 +324,24 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $returnItemsIn        = $body['return_items'] ?? [];
     $returnReason         = trim($body['return_reason'] ?? '');
 
-    if (!$customer_name) {
-        echo json_encode(['success' => false, 'message' => 'Customer name is required.']); exit;
-    }
-    if (!preg_match('/^\d{10}$/', $customer_phone)) {
-        echo json_encode(['success' => false, 'message' => 'Phone number must be exactly 10 digits.']); exit;
-    }
-    if (empty($items)) {
-        echo json_encode(['success' => false, 'message' => 'Order must have at least one item.']); exit;
+    // Started from Start Exchange/Return with item(s) picked to give back
+    // but nothing new added — that's just a Return, not an exchange. No
+    // replacement order gets created; the claimed item(s) still go through
+    // the same deferred-receipt flow (see Exchanges page) since the whole
+    // point of that page is confirming physical receipt, whether or not a
+    // replacement was ever involved.
+    $isPureReturn = $exchangeFromOrderId !== '' && empty($items);
+
+    if (!$isPureReturn) {
+        if (!$customer_name) {
+            echo json_encode(['success' => false, 'message' => 'Customer name is required.']); exit;
+        }
+        if (!preg_match('/^\d{10}$/', $customer_phone)) {
+            echo json_encode(['success' => false, 'message' => 'Phone number must be exactly 10 digits.']); exit;
+        }
+        if (empty($items)) {
+            echo json_encode(['success' => false, 'message' => 'Order must have at least one item.']); exit;
+        }
     }
 
     // Validate the exchange claim, if any, before touching anything.
@@ -379,7 +424,7 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         ];
     }
 
-    if (empty($lineItems)) {
+    if (!$isPureReturn && empty($lineItems)) {
         echo json_encode(['success' => false, 'message' => 'No valid items in order.']); exit;
     }
 
@@ -392,6 +437,12 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     // full-amount default down to 0 (COD) or any partial figure. Tracked
     // separately from $total, since $total can later change via an Exchange.
     $amount_paid = min($amount_paid_in, $total);
+    // Manually-marked exchange order: the entered amount is a credit
+    // carried over from an already-paid item on some other (not formally
+    // linked) order, not a fresh payment collection — labeled distinctly
+    // so it reads correctly on the Orders list and never gets treated as
+    // "courier still needs to collect this".
+    $isManualExchange = !empty($body['is_manual_exchange']);
     if ($amount_paid <= 0) {
         $payment_status = 'unpaid';
         $payment_method = 'Cash on Delivery';
@@ -402,58 +453,79 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $payment_status = 'partial';
         $payment_method = 'Partial Payment';
     }
+    if ($isManualExchange && $amount_paid > 0) {
+        $payment_method = 'Exchange Credit';
+    }
 
-    // Generate order_id: ORD-YYYYMMDD-XXXX
-    $last = $pdo->query("SELECT order_id FROM orders ORDER BY id DESC LIMIT 1")->fetchColumn();
-    $seq  = $last ? ((int)substr($last, -4) + 1) : 1;
-    $orderId = 'ORD-' . date('Ymd') . '-' . str_pad($seq, 4, '0', STR_PAD_LEFT);
+    $orderId   = null;
+    $dbOrderId = null;
+    if (!$isPureReturn) {
+        // Generate order_id: ORD-YYYYMMDD-XXXX
+        $last = $pdo->query("SELECT order_id FROM orders ORDER BY id DESC LIMIT 1")->fetchColumn();
+        $seq  = $last ? ((int)substr($last, -4) + 1) : 1;
+        $orderId = 'ORD-' . date('Ymd') . '-' . str_pad($seq, 4, '0', STR_PAD_LEFT);
+    }
 
     // Begin transaction
     $pdo->beginTransaction();
     try {
-        $pdo->prepare("
-            INSERT INTO orders
-                (order_id, customer_name, customer_phone, customer_email, customer_address, fb_page_id,
-                 subtotal, discount, discount_type, extra_charge, shipping_cost, shipping_method, courier_name, total,
-                 payment_method, payment_status, amount_paid, status, remarks, exchanged_from_order_id, created_by, assigned_to)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'new',?,?,?,?)
-        ")->execute([
-            $orderId, $customer_name, $customer_phone ?: null, $customer_email ?: null, $customer_address ?: null, $fb_page_id,
-            $subtotal, $discountAmount, $discount_type, $extra_charge, $shipping_cost, $shipping_method ?: null, $courier_name ?: null, $total,
-            $payment_method, $payment_status, $amount_paid, $remarks ?: null, $exchangeFromDbId, $user['id'], $user['id'],
-        ]);
-        $dbOrderId = $pdo->lastInsertId();
-
-        // Insert items — stock is NOT deducted here; deduction happens at dispatch time (see status action below)
-        foreach ($lineItems as $li) {
+        if (!$isPureReturn) {
             $pdo->prepare("
-                INSERT INTO order_items
-                    (order_id, product_id, product_name, variant_id, variant_info, qty, sell_price, buy_price, total)
-                VALUES (?,?,?,?,?,?,?,?,?)
+                INSERT INTO orders
+                    (order_id, customer_name, customer_phone, customer_email, customer_address, fb_page_id,
+                     subtotal, discount, discount_type, extra_charge, shipping_cost, shipping_method, courier_name, total,
+                     payment_method, payment_status, amount_paid, status, remarks, exchanged_from_order_id, created_by, assigned_to)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'new',?,?,?,?)
             ")->execute([
-                $dbOrderId, $li['product_id'], $li['product_name'], $li['variant_id'], $li['variant_info'],
-                $li['qty'], $li['sell_price'], $li['buy_price'], $li['total'],
+                $orderId, $customer_name, $customer_phone ?: null, $customer_email ?: null, $customer_address ?: null, $fb_page_id,
+                $subtotal, $discountAmount, $discount_type, $extra_charge, $shipping_cost, $shipping_method ?: null, $courier_name ?: null, $total,
+                $payment_method, $payment_status, $amount_paid, $remarks ?: null, $exchangeFromDbId, $user['id'], $user['id'],
             ]);
+            $dbOrderId = (int)$pdo->lastInsertId();
+
+            // Insert items — stock is NOT deducted here; deduction happens at dispatch time (see status action below)
+            foreach ($lineItems as $li) {
+                $pdo->prepare("
+                    INSERT INTO order_items
+                        (order_id, product_id, product_name, variant_id, variant_info, qty, sell_price, buy_price, total)
+                    VALUES (?,?,?,?,?,?,?,?,?)
+                ")->execute([
+                    $dbOrderId, $li['product_id'], $li['product_name'], $li['variant_id'], $li['variant_info'],
+                    $li['qty'], $li['sell_price'], $li['buy_price'], $li['total'],
+                ]);
+            }
+
+            // Log initial status
+            $pdo->prepare("INSERT INTO order_status_log (order_id,from_status,to_status,changed_by) VALUES (?,NULL,'new',?)")
+                ->execute([$dbOrderId, $user['id']]);
         }
 
-        // Log initial status
-        $pdo->prepare("INSERT INTO order_status_log (order_id,from_status,to_status,changed_by) VALUES (?,NULL,'new',?)")
-            ->execute([$dbOrderId, $user['id']]);
-
-        // Exchange: claim the item(s) being given up against the original
-        // order now (reduces its total immediately) — stock/returned_qty for
-        // them stays untouched until physically received on the Exchanges page.
+        // Exchange/Return claim: claim the item(s) being given up against
+        // the original order now (reduces its total immediately) — stock/
+        // returned_qty for them stays untouched until physically received
+        // on the Exchanges page. Whatever was already paid for them gets
+        // credited forward onto the replacement order (if any) instead of
+        // asking the customer to pay for that value twice.
         if (!empty($validatedReturnItems)) {
+            $totalCredit = 0;
             foreach ($validatedReturnItems as $vri) {
-                claimExchangeReturn($pdo, $vri['item'], $vri['qty'], $user['id'], $exchangeFromOrderId, $returnReason ?: null, (int)$dbOrderId);
+                $totalCredit += claimExchangeReturn($pdo, $vri['item'], $vri['qty'], $user['id'], $exchangeFromOrderId, $returnReason ?: null, $dbOrderId);
+            }
+
+            if (!$isPureReturn && $totalCredit > 0) {
+                $creditedPaid   = min($total, $amount_paid + $totalCredit);
+                $creditedStatus = $creditedPaid <= 0 ? 'unpaid' : ($creditedPaid >= $total ? 'paid' : 'partial');
+                $pdo->prepare("UPDATE orders SET amount_paid=?, payment_status=?, payment_method='Exchange Credit' WHERE id=?")
+                    ->execute([$creditedPaid, $creditedStatus, $dbOrderId]);
             }
 
             // The original order's own delivery leg is done once it's been
-            // exchanged — whatever was kept was delivered, whatever wasn't is
-            // now tracked on the new order instead. Mark it Delivered so it
-            // stops showing as still in transit, and auto-settle its payment
-            // the same way a normal delivery does so the courier is never
-            // asked to collect on it again.
+            // exchanged or returned — whatever was kept was delivered,
+            // whatever wasn't is now closed out (moved to the new order, or
+            // simply given back). Mark it Delivered so it stops showing as
+            // still in transit, and auto-settle its payment the same way a
+            // normal delivery does so the courier is never asked to collect
+            // on it again.
             if ($origOrder['status'] !== 'delivered') {
                 $pdo->prepare("
                     UPDATE orders SET status='delivered', delivered_at=COALESCE(delivered_at, NOW()), updated_by=?,
@@ -462,13 +534,14 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     WHERE id=?
                 ")->execute([$user['id'], $exchangeFromDbId]);
 
+                $deliveredNote = $isPureReturn ? 'Marked delivered — item returned' : "Marked delivered — exchanged for {$orderId}";
                 $pdo->prepare("INSERT INTO order_status_log (order_id,from_status,to_status,changed_by,note) VALUES (?,?,'delivered',?,?)")
-                    ->execute([$exchangeFromDbId, $origOrder['status'], $user['id'], "Marked delivered — exchanged for {$orderId}"]);
+                    ->execute([$exchangeFromDbId, $origOrder['status'], $user['id'], $deliveredNote]);
             }
         }
 
         $pdo->commit();
-        echo json_encode(['success' => true, 'order_id' => $orderId]);
+        echo json_encode(['success' => true, 'order_id' => $isPureReturn ? $exchangeFromOrderId : $orderId]);
     } catch (Exception $e) {
         $pdo->rollBack();
         echo json_encode(['success' => false, 'message' => 'Failed to create order. Please try again.']);

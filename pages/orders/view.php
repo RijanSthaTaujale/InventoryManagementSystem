@@ -148,8 +148,8 @@ include __DIR__ . '/../../components/head.php';
       <div class="flex-between mb-4">
         <div>
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-            <a href="<?= APP_URL ?>/pages/orders/index.php" style="color:var(--text-muted);font-size:.82rem;display:flex;align-items:center;gap:4px">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> Orders
+            <a href="<?= APP_URL ?>/pages/orders/index.php" style="color:var(--text);font-size:.92rem;font-weight:700;display:flex;align-items:center;gap:4px">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg> Orders
             </a>
             <span style="color:var(--text-muted);font-size:.82rem">/</span>
             <span style="font-size:.82rem"><?= e($order['order_id']) ?></span>
@@ -179,7 +179,7 @@ include __DIR__ . '/../../components/head.php';
           <a href="<?= APP_URL ?>/pages/orders/create.php?edit=<?= urlencode($order['order_id']) ?>" class="btn btn-outline btn-sm">Edit Order</a>
           <?php endif; ?>
           <?php if (($isAdmin || $isSuper) && $order['stock_deducted'] && $hasExchangeableItem): ?>
-          <a href="<?= APP_URL ?>/pages/orders/create.php?exchange_from=<?= urlencode($order['order_id']) ?>" class="btn btn-outline btn-sm">Start Exchange</a>
+          <a href="<?= APP_URL ?>/pages/orders/create.php?exchange_from=<?= urlencode($order['order_id']) ?>" class="btn btn-outline btn-sm">Start Exchange/Return</a>
           <?php endif; ?>
           <a href="<?= APP_URL ?>/pages/orders/create.php" class="btn btn-primary btn-sm">New Order</a>
         </div>
@@ -312,7 +312,12 @@ include __DIR__ . '/../../components/head.php';
               <div style="display:flex;justify-content:space-between;font-size:.8rem;color:var(--text-muted);margin-top:2px">
                 <span>Profit (est.)</span>
                 <?php
-                $cost   = array_sum(array_map(fn($i) => $i['buy_price'] * ($i['qty'] - $i['returned_qty']), $items));
+                // The moment an item is claimed for exchange/return, its
+                // value is immediately removed from $order['total'] — cost
+                // needs to drop with it in the same instant, not wait until
+                // physical receipt (when returned_qty finally moves), or
+                // profit looks artificially low for the whole pending window.
+                $cost   = array_sum(array_map(fn($i) => $i['buy_price'] * max(0, $i['qty'] - $i['returned_qty'] - (int)($pendingByItem[$i['id']] ?? 0)), $items));
                 $profit = $order['total'] - $cost - $order['shipping_cost'];
                 ?>
                 <span style="color:<?= $profit >= 0 ? '#22c55e' : '#ef4444' ?>;font-weight:600"><?= $currency ?> <?= number_format($profit, 0) ?></span>

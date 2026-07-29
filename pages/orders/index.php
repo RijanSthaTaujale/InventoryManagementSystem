@@ -391,6 +391,13 @@ include __DIR__ . '/../../components/head.php';
               <td style="font-weight:600">
                 <div><?= $currency ?> <?= number_format($rowAmountDue,0) ?></div>
                 <div style="font-size:.68rem;font-weight:500;color:var(--text-muted);margin-top:2px"><?= $currency ?> <?= number_format($o['total'],0) ?></div>
+                <?php if ($o['amount_paid'] > 0):
+                  $isExchangeCredit = $o['payment_method'] === 'Exchange Credit';
+                ?>
+                <div style="font-size:.66rem;font-weight:600;color:<?= $isExchangeCredit ? '#6d28d9' : '#22c55e' ?>;margin-top:1px">
+                  <?= $isExchangeCredit ? '&#8644;' : '&#10003;' ?> <?= $currency ?> <?= number_format($o['amount_paid'],0) ?> <?= $isExchangeCredit ? 'credited from exchange' : 'paid' ?>
+                </div>
+                <?php endif; ?>
               </td>
               <?php endif; ?>
               <td>

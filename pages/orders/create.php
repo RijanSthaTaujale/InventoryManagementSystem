@@ -62,7 +62,7 @@ if ($isExchangeMode) {
     }
 }
 
-$pageTitle = $isEditMode ? 'Edit Order' : ($isExchangeMode ? 'Exchange Order' : 'New Order');
+$pageTitle = $isEditMode ? 'Edit Order' : ($isExchangeMode ? 'Exchange/Return Order' : 'New Order');
 
 // Generate next order ID preview (only relevant when creating)
 if (!$isEditMode) {
@@ -90,15 +90,15 @@ include __DIR__ . '/../../components/head.php';
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> Orders
             </a>
             <span style="color:var(--text-muted);font-size:.82rem">/</span>
-            <span style="font-size:.82rem"><?= $isEditMode ? 'Edit Order' : ($isExchangeMode ? 'Exchange Order' : 'New Order') ?></span>
+            <span style="font-size:.82rem"><?= $isEditMode ? 'Edit Order' : ($isExchangeMode ? 'Exchange/Return' : 'New Order') ?></span>
           </div>
-          <h1 style="font-size:1.25rem;font-weight:700"><?= $isEditMode ? 'Edit Order — ' . e($order['order_id']) : ($isExchangeMode ? 'Create Exchange Order — for ' . e($exchangeFromOrder['order_id']) : 'Add New Order') ?></h1>
+          <h1 style="font-size:1.25rem;font-weight:700"><?= $isEditMode ? 'Edit Order — ' . e($order['order_id']) : ($isExchangeMode ? 'Exchange/Return — for ' . e($exchangeFromOrder['order_id']) : 'Add New Order') ?></h1>
         </div>
         <div style="display:flex;gap:8px">
           <a href="<?= APP_URL ?>/pages/orders/<?= $isEditMode ? 'view.php?id=' . urlencode($order['order_id']) : ($isExchangeMode ? 'view.php?id=' . urlencode($exchangeFromOrder['order_id']) : 'index.php') ?>" class="btn btn-outline btn-sm">Cancel</a>
           <button class="btn btn-primary" onclick="submitOrder()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/></svg>
-            <?= $isEditMode ? 'Update Order' : ($isExchangeMode ? 'Create Exchange Order' : 'Place Order') ?>
+            <?= $isEditMode ? 'Update Order' : ($isExchangeMode ? 'Submit Exchange/Return' : 'Place Order') ?>
           </button>
         </div>
       </div>
@@ -157,7 +157,7 @@ include __DIR__ . '/../../components/head.php';
           <!-- Items Being Returned -->
           <div class="card" style="border:1px solid #fde68a;background:#fffbeb">
             <div class="card-title" style="margin-bottom:2px">Items Being Returned</div>
-            <p style="font-size:.8rem;color:var(--text-secondary);margin-bottom:14px">From order <?= e($exchangeFromOrder['order_id']) ?> — select what the customer is giving back. Stock won't change until it's confirmed received on the Exchanges page.</p>
+            <p style="font-size:.8rem;color:var(--text-secondary);margin-bottom:14px">From order <?= e($exchangeFromOrder['order_id']) ?> — select what the customer is giving back. Add a replacement product below for an exchange, or leave it empty for a plain return — either way, stock won't change until it's confirmed received on the Exchanges page.</p>
             <div style="display:flex;flex-direction:column;gap:8px">
               <?php foreach ($returnCandidates as $rc): ?>
               <label style="display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--border);border-radius:var(--radius-md);cursor:pointer;background:#fff">
@@ -255,6 +255,17 @@ include __DIR__ . '/../../components/head.php';
                   </div>
                 </div>
               </div>
+              <?php if (!$isExchangeMode): ?>
+              <div class="form-group">
+                <div style="display:flex;align-items:center;gap:6px">
+                  <input type="checkbox" id="manualExchangeCheckbox" style="width:16px;height:16px;flex-shrink:0" onchange="toggleManualExchange()">
+                  <label for="manualExchangeCheckbox" style="font-size:.88rem;font-weight:600;color:var(--text);margin:0;cursor:pointer">Exchange Order (manually recorded)</label>
+                </div>
+                <div style="font-size:.78rem;color:var(--text-muted);margin-top:4px">Check this if the customer already paid for an item elsewhere and this order replaces it — enter how much of that payment carries over.</div>
+                <input type="number" id="manualExchangeAmountInput" class="form-control" min="0" step="0.01" value="0" disabled
+                       style="display:none;margin-top:8px;max-width:160px" oninput="amountPaidTouched=true; recalc();">
+              </div>
+              <?php endif; ?>
               <div class="form-group">
                 <label class="form-label">Remarks / Staff Notes</label>
                 <textarea id="remarks" class="form-control" rows="3" placeholder="Internal notes about this order..."></textarea>
@@ -315,7 +326,7 @@ include __DIR__ . '/../../components/head.php';
 
           <button class="btn btn-primary" style="width:100%" onclick="submitOrder()">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-            <?= $isEditMode ? 'Update Order' : ($isExchangeMode ? 'Create Exchange Order' : 'Place Order') ?>
+            <?= $isEditMode ? 'Update Order' : ($isExchangeMode ? 'Submit Exchange/Return' : 'Place Order') ?>
           </button>
           <div id="orderError" style="display:none;padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:var(--radius-md);color:#b91c1c;font-size:.83rem"></div>
         </div>
@@ -371,6 +382,7 @@ const PREFILL_ORDER = <?= json_encode([
     'customer_phone'     => $exchangeFromOrder['customer_phone'],
     'customer_address'   => $exchangeFromOrder['customer_address'],
     'fb_page_id'         => $exchangeFromOrder['fb_page_id'],
+    'courier_name'       => $exchangeFromOrder['courier_name'],
 ]) ?>;
 <?php endif; ?>
 <?php if ($isEditMode): ?>
@@ -556,14 +568,21 @@ function recalc() {
     document.getElementById('amountPaidInput').value = total.toFixed(2);
   }
 
-  const amountPaid = prepaidChecked ? (parseFloat(document.getElementById('amountPaidInput').value) || 0) : 0;
+  const manualExchangeEl = document.getElementById('manualExchangeCheckbox');
+  const manualExchangeChecked = manualExchangeEl ? manualExchangeEl.checked : false;
+
+  const amountPaid = prepaidChecked ? (parseFloat(document.getElementById('amountPaidInput').value) || 0)
+                    : manualExchangeChecked ? (parseFloat(document.getElementById('manualExchangeAmountInput').value) || 0)
+                    : 0;
   const amountDue  = Math.max(0, total - amountPaid);
   const dueEl  = document.getElementById('sumAmountDue');
   const noteEl = document.getElementById('sumAlreadyPaidNote');
   dueEl.textContent = `${CURRENCY} ${amountDue.toLocaleString()}`;
   dueEl.style.color = amountDue > 0 ? 'var(--text)' : '#22c55e';
   if (amountPaid > 0) {
-    noteEl.textContent = `✓ ${CURRENCY} ${amountPaid.toLocaleString()} already paid`;
+    noteEl.textContent = manualExchangeChecked
+      ? `✓ ${CURRENCY} ${amountPaid.toLocaleString()} credited from exchange`
+      : `✓ ${CURRENCY} ${amountPaid.toLocaleString()} already paid`;
     noteEl.style.display = '';
   } else {
     noteEl.style.display = 'none';
@@ -572,10 +591,42 @@ function recalc() {
 
 // The Amount Paid field is only usable once Prepaid is checked — checking it
 // reveals the field pre-filled with the current total (overridable down to
-// any partial figure); unchecking hides it and resets to unpaid.
+// any partial figure); unchecking hides it and resets to unpaid. Mutually
+// exclusive with the manual-exchange credit below — both drive the same
+// amount_paid slot, so only one can be active at a time.
 function togglePrepaid() {
   const checked = document.getElementById('prepaidCheckbox').checked;
+  if (checked) {
+    const mx = document.getElementById('manualExchangeCheckbox');
+    if (mx && mx.checked) {
+      mx.checked = false;
+      document.getElementById('manualExchangeAmountInput').disabled = true;
+      document.getElementById('manualExchangeAmountInput').style.display = 'none';
+      document.getElementById('manualExchangeAmountInput').value = 0;
+    }
+  }
   const input   = document.getElementById('amountPaidInput');
+  input.disabled = !checked;
+  input.style.display = checked ? '' : 'none';
+  amountPaidTouched = false;
+  if (!checked) input.value = 0;
+  recalc();
+}
+
+// Credits a prior payment (from an item this order replaces, handled outside
+// the formal Start Exchange/Return flow) toward this order's total, the same
+// way Prepaid does — just labeled and tracked distinctly (payment_method
+// becomes "Exchange Credit") so it reads correctly everywhere amount_paid is
+// shown, instead of looking like a normal courier-collected payment.
+function toggleManualExchange() {
+  const checked = document.getElementById('manualExchangeCheckbox').checked;
+  if (checked && document.getElementById('prepaidCheckbox').checked) {
+    document.getElementById('prepaidCheckbox').checked = false;
+    document.getElementById('amountPaidInput').disabled = true;
+    document.getElementById('amountPaidInput').style.display = 'none';
+    document.getElementById('amountPaidInput').value = 0;
+  }
+  const input = document.getElementById('manualExchangeAmountInput');
   input.disabled = !checked;
   input.style.display = checked ? '' : 'none';
   amountPaidTouched = false;
@@ -674,7 +725,6 @@ async function submitOrder() {
 
   if (!custName)              { errDiv.textContent='Customer name is required.'; errDiv.style.display='block'; return; }
   if (!/^\d{10}$/.test(custPhone)) { errDiv.textContent='Phone number must be exactly 10 digits.'; errDiv.style.display='block'; return; }
-  if (!items.length)          { errDiv.textContent='Add at least one product.'; errDiv.style.display='block'; return; }
 
   let returnItems = [];
   if (IS_EXCHANGE) {
@@ -684,6 +734,11 @@ async function submitOrder() {
     })).filter(ri => ri.qty > 0);
     if (!returnItems.length) { errDiv.textContent='Select at least one item the customer is returning.'; errDiv.style.display='block'; return; }
   }
+  // A new product is only required when there's actually a replacement being
+  // given — picking return item(s) with nothing new added is just a Return,
+  // handled without creating a second order (see action=create server-side).
+  const isPureReturn = IS_EXCHANGE && returnItems.length > 0 && !items.length;
+  if (!items.length && !isPureReturn) { errDiv.textContent='Add at least one product.'; errDiv.style.display='block'; return; }
 
   // Re-check the blacklist right here (not just relying on the onblur check) so
   // the warning always fires at the moment of placing the order.
@@ -710,7 +765,10 @@ async function submitOrder() {
     fb_page_id:       document.getElementById('fbPage').value || null,
     amount_paid:      document.getElementById('prepaidCheckbox').checked
                         ? Math.max(0, parseFloat(document.getElementById('amountPaidInput').value) || 0)
-                        : 0,
+                        : (document.getElementById('manualExchangeCheckbox')?.checked
+                            ? Math.max(0, parseFloat(document.getElementById('manualExchangeAmountInput').value) || 0)
+                            : 0),
+    is_manual_exchange: !!document.getElementById('manualExchangeCheckbox')?.checked,
     extra_charge:     extraCharge,
     shipping_method:  sel.value,
     shipping_cost:    shipping,
@@ -730,8 +788,8 @@ async function submitOrder() {
   if (IS_EDIT) payload.order_id = EDIT_ORDER.order_id;
 
   const btns = document.querySelectorAll('button.btn-primary');
-  const busyLabel = IS_EDIT ? 'Updating...' : (IS_EXCHANGE ? 'Creating exchange...' : 'Placing...');
-  const idleLabel = IS_EDIT ? 'Update Order' : (IS_EXCHANGE ? 'Create Exchange Order' : 'Place Order');
+  const busyLabel = IS_EDIT ? 'Updating...' : (IS_EXCHANGE ? 'Submitting...' : 'Placing...');
+  const idleLabel = IS_EDIT ? 'Update Order' : (IS_EXCHANGE ? 'Submit Exchange/Return' : 'Place Order');
   btns.forEach(b => { b.disabled = true; b.innerHTML = `<span class="spinner"></span> ${busyLabel}`; });
 
   try {
@@ -740,7 +798,7 @@ async function submitOrder() {
     });
     const d = await r.json();
     if (d.success) {
-      showToast(IS_EDIT ? 'Order updated!' : (IS_EXCHANGE ? 'Exchange order created!' : 'Order created!'),'success');
+      showToast(IS_EDIT ? 'Order updated!' : (IS_EXCHANGE ? 'Exchange/Return submitted!' : 'Order created!'),'success');
       setTimeout(() => window.location.href = `${APP_URL}/pages/orders/view.php?id=${d.order_id}`, 700);
     } else {
       errDiv.textContent = d.message || `Failed to ${IS_EDIT ? 'update' : 'create'} order.`;
@@ -760,6 +818,15 @@ if (IS_EXCHANGE) {
   document.getElementById('custPhone').value   = PREFILL_ORDER.customer_phone || '';
   document.getElementById('custAddress').value = PREFILL_ORDER.customer_address || '';
   if (PREFILL_ORDER.fb_page_id) document.getElementById('fbPage').value = PREFILL_ORDER.fb_page_id;
+  if (PREFILL_ORDER.courier_name) {
+    const courierSel = document.getElementById('courierName');
+    if (![...courierSel.options].some(o => o.value === PREFILL_ORDER.courier_name)) {
+      const opt = document.createElement('option');
+      opt.value = PREFILL_ORDER.courier_name; opt.textContent = PREFILL_ORDER.courier_name;
+      courierSel.appendChild(opt);
+    }
+    courierSel.value = PREFILL_ORDER.courier_name;
+  }
 }
 
 // ── Prefill form when editing an existing order ───────────────
