@@ -71,6 +71,7 @@ include __DIR__ . '/../../components/head.php';
             Edit
           </a>
           <button onclick="openAdjModal()" class="btn btn-primary btn-sm">Adjust Stock</button>
+          <button onclick="deleteProduct()" class="btn btn-outline btn-sm" style="color:#ef4444;border-color:#fca5a5">Delete</button>
         </div>
         <?php endif; ?>
       </div>
@@ -326,6 +327,23 @@ async function submitAdj() {
   document.getElementById('adjModal').style.display='none';
   if (d.success) { showToast('Stock updated','success'); setTimeout(()=>location.reload(),700); }
   else showToast(d.message||'Failed','error');
+}
+
+async function deleteProduct() {
+  const ok = confirm(<?= json_encode('Permanently delete "' . $p['name'] . '"? This cannot be undone — it will also erase this product\'s variants, photos, and stock/damage history. Past orders keep their records but will no longer link to it.') ?>);
+  if (!ok) return;
+
+  const r = await fetch('<?= APP_URL ?>/api/products.php?action=delete_product', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ id: <?= $p['id'] ?> })
+  });
+  const d = await r.json();
+  if (d.success) {
+    showToast('Product deleted', 'success');
+    setTimeout(() => window.location.href = '<?= APP_URL ?>/pages/products/index.php', 700);
+  } else {
+    showToast(d.message || 'Failed to delete product', 'error');
+  }
 }
 </script>
 <?php endif; ?>

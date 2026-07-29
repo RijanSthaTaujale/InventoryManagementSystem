@@ -94,6 +94,22 @@ if ($pagePhones) {
     }
 }
 
+// Recurring customer: same phone has more than one order all-time (not just
+// today) — shows on every one of that phone's orders, same scoping approach
+// as the duplicate check above.
+$recurringCounts = [];
+if ($pagePhones) {
+    $recStmt = $pdo->prepare("
+        SELECT customer_phone, COUNT(*) AS c
+        FROM orders WHERE customer_phone IN ($placeholders)
+        GROUP BY customer_phone HAVING c > 1
+    ");
+    $recStmt->execute($pagePhones);
+    foreach ($recStmt->fetchAll() as $row) {
+        $recurringCounts[$row['customer_phone']] = (int)$row['c'];
+    }
+}
+
 // Exchanged orders (scoped to the orders on this page)
 $exchangedOrderIds = [];
 $pageOrderDbIds = array_column($orders, 'id');
@@ -319,6 +335,7 @@ include __DIR__ . '/../../components/head.php';
               $isBlacklisted = $o['customer_phone'] && isset($blacklistSet[$o['customer_phone']]);
               $rowDate       = date('Y-m-d', strtotime($o['created_at']));
               $isDuplicate   = $o['customer_phone'] && isset($duplicateKeys[$o['customer_phone'] . '|' . $rowDate]);
+              $recurringCount = $o['customer_phone'] ? ($recurringCounts[$o['customer_phone']] ?? 0) : 0;
               $isExchanged   = isset($exchangedOrderIds[$o['id']]);
               $rowStyle      = $isBlacklisted ? 'background:#fef2f2' : ($isDuplicate ? 'background:#fefce8' : '');
             ?>
@@ -346,6 +363,9 @@ include __DIR__ . '/../../components/head.php';
                 <div style="font-size:.68rem;font-weight:700;color:#b91c1c;margin-top:2px">⚠ Blacklisted</div>
                 <?php elseif ($isDuplicate): ?>
                 <div style="font-size:.68rem;font-weight:700;color:#92400e;margin-top:2px">⚠ Duplicate today</div>
+                <?php endif; ?>
+                <?php if ($recurringCount > 1): ?>
+                <div style="font-size:.68rem;font-weight:700;color:#1d4ed8;margin-top:2px">&#8635; Recurring: <?= $recurringCount ?></div>
                 <?php endif; ?>
                 <?php if ($isExchanged): ?>
                 <div style="font-size:.68rem;font-weight:700;color:#6d28d9;margin-top:2px">&#8644; Exchanged</div>

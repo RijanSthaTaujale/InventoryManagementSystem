@@ -13,9 +13,26 @@ $currency   = 'Rs';
 $page    = max(1, (int)($_GET['page'] ?? 1));
 $perPage = 20;
 
+// Status is derived (received_at/received_damaged), not a stored enum, so
+// the filter translates to a condition rather than a plain column match.
+$statusFilter = $_GET['status'] ?? '';
+$statusWhere  = '';
+if ($statusFilter === 'pending')       $statusWhere = 'AND r.received_at IS NULL';
+elseif ($statusFilter === 'received')  $statusWhere = 'AND r.received_at IS NOT NULL AND r.received_damaged = 0';
+elseif ($statusFilter === 'damaged')   $statusWhere = 'AND r.received_at IS NOT NULL AND r.received_damaged = 1';
+else $statusFilter = '';
+
+// Counts for the tab bar (always unfiltered, so switching tabs shows stable totals)
+$statusCounts = [
+    ''         => (int)$pdo->query("SELECT COUNT(*) FROM order_returns WHERE is_exchange=1")->fetchColumn(),
+    'pending'  => (int)$pdo->query("SELECT COUNT(*) FROM order_returns WHERE is_exchange=1 AND received_at IS NULL")->fetchColumn(),
+    'received' => (int)$pdo->query("SELECT COUNT(*) FROM order_returns WHERE is_exchange=1 AND received_at IS NOT NULL AND received_damaged=0")->fetchColumn(),
+    'damaged'  => (int)$pdo->query("SELECT COUNT(*) FROM order_returns WHERE is_exchange=1 AND received_at IS NOT NULL AND received_damaged=1")->fetchColumn(),
+];
+
 // The list shows full history, not just what's pending — settled rows stay
 // visible (marked Received/Damaged) rather than disappearing once actioned.
-$total = (int)$pdo->query("SELECT COUNT(*) FROM order_returns WHERE is_exchange=1")->fetchColumn();
+$total      = $statusCounts[$statusFilter];
 $totalPages = max(1, ceil($total / $perPage));
 $page       = min($page, $totalPages);
 $offset     = ($page - 1) * $perPage;
@@ -30,17 +47,17 @@ $stmt = $pdo->prepare("
     JOIN orders o ON o.id = r.order_id
     LEFT JOIN orders n ON n.id = r.new_order_id
     LEFT JOIN users u ON u.id = r.returned_by
-    WHERE r.is_exchange = 1
+    WHERE r.is_exchange = 1 $statusWhere
     ORDER BY (r.received_at IS NULL) DESC, r.created_at DESC
     LIMIT $perPage OFFSET $offset
 ");
 $stmt->execute();
 $rows = $stmt->fetchAll();
 
-$pendingCount = (int)$pdo->query("SELECT COUNT(*) FROM order_returns WHERE is_exchange=1 AND received_at IS NULL")->fetchColumn();
+$pendingCount = $statusCounts['pending'];
 $pendingUnits = (int)$pdo->query("SELECT COALESCE(SUM(qty),0) FROM order_returns WHERE is_exchange=1 AND received_at IS NULL")->fetchColumn();
 
-$baseUrl = APP_URL . '/pages/orders/exchange.php';
+$baseUrl = APP_URL . '/pages/orders/exchange.php' . ($statusFilter ? '?status=' . urlencode($statusFilter) : '');
 
 include __DIR__ . '/../../components/head.php';
 ?>
@@ -64,6 +81,15 @@ include __DIR__ . '/../../components/head.php';
             <?= number_format($pendingCount) ?> pending · <?= number_format($pendingUnits) ?> units awaiting receipt
           </p>
         </div>
+      </div>
+
+      <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
+        <?php foreach (['' => 'All', 'pending' => 'Pending', 'received' => 'Received', 'damaged' => 'Damaged'] as $val => $label): ?>
+        <a href="<?= APP_URL ?>/pages/orders/exchange.php<?= $val ? '?status=' . urlencode($val) : '' ?>"
+           class="btn btn-sm <?= $statusFilter === $val ? 'btn-primary' : 'btn-outline' ?>">
+          <?= $label ?> (<?= number_format($statusCounts[$val]) ?>)
+        </a>
+        <?php endforeach; ?>
       </div>
 
       <div class="data-table-wrap">

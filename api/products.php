@@ -16,6 +16,35 @@ if ($action === 'delete' && $isAdmin) {
     exit;
 }
 
+// Permanently removes a product — unlike the soft-delete above (which just
+// discontinues it), this actually erases the row. Order history survives
+// since order_items snapshots product_name/sell_price/buy_price and only
+// has product_id/variant_id nulled (ON DELETE SET NULL); but this product's
+// own variants, photos, stock-adjustment log, and damaged-stock log all
+// cascade-delete with it, which is why it's a separate, admin-only action
+// from the reversible discontinue above.
+if ($action === 'delete_product' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!$isAdmin) { echo json_encode(['success'=>false,'message'=>'Only admin can delete products.']); exit; }
+
+    $body = json_decode(file_get_contents('php://input'), true);
+    $id   = (int)($body['id'] ?? 0);
+    if (!$id) { echo json_encode(['success'=>false,'message'=>'Invalid ID']); exit; }
+
+    $stmt = $pdo->prepare("SELECT image_url FROM products WHERE id=?");
+    $stmt->execute([$id]);
+    $product = $stmt->fetch();
+    if (!$product) { echo json_encode(['success'=>false,'message'=>'Product not found.']); exit; }
+
+    $pdo->prepare("DELETE FROM products WHERE id=?")->execute([$id]);
+
+    if ($product['image_url'] && str_starts_with($product['image_url'], '/assets/uploads/products/')) {
+        @unlink(__DIR__ . '/../' . ltrim($product['image_url'], '/'));
+    }
+
+    echo json_encode(['success'=>true]);
+    exit;
+}
+
 if ($action === 'search') {
     $q    = trim($_GET['q'] ?? '');
     $like = "%$q%";
