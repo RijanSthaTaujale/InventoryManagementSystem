@@ -550,19 +550,30 @@ if ($action === 'status' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $order = $stmt->fetch();
     if (!$order) { echo json_encode(['success' => false, 'message' => 'Order not found.']); exit; }
 
-    $extra  = '';
-    $params = [$newStatus, $user['id'], $order['id']];
+    // The status dropdown allows jumping straight from New/Confirmed to
+    // In Courier or Delivered without passing through Dispatched — but
+    // dispatched_at is what stock deduction AND every revenue figure
+    // (Dashboard, Reports) key off. So the first time an order reaches any
+    // of these three, whichever one it lands on directly, dispatched_at
+    // must be set — not only on the literal 'dispatched' transition.
+    $shippedStatuses  = ['dispatched', 'in_courier', 'delivered'];
+    $enteringShipped  = in_array($newStatus, $shippedStatuses, true) && !$order['stock_deducted'];
 
-    if ($newStatus === 'dispatched') {
-        $extra  = ', dispatched_by=?, dispatched_at=NOW()';
-        $params = [$newStatus, $user['id'], $user['id'], $order['id']];
-    } elseif ($newStatus === 'delivered') {
+    $extra  = '';
+    $params = [$newStatus, $user['id']];
+
+    if ($enteringShipped) {
+        $extra   .= ', dispatched_by=?, dispatched_at=NOW()';
+        $params[] = $user['id'];
+    }
+    if ($newStatus === 'delivered') {
         // Whatever's still owed is collected at the door on delivery — if the
         // order was 'unpaid' or only 'partial'ly prepaid, it's fully paid now.
         // This matters later: an Exchange or re-export on this order must
         // never tell the courier to collect money again for it.
-        $extra = ", delivered_at=NOW(), amount_paid=IF(payment_status IN ('unpaid','partial'),total,amount_paid), payment_status=IF(payment_status IN ('unpaid','partial'),'paid',payment_status)";
+        $extra .= ", delivered_at=NOW(), amount_paid=IF(payment_status IN ('unpaid','partial'),total,amount_paid), payment_status=IF(payment_status IN ('unpaid','partial'),'paid',payment_status)";
     }
+    $params[] = $order['id'];
 
     $pdo->beginTransaction();
     try {
@@ -571,8 +582,8 @@ if ($action === 'status' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->prepare("INSERT INTO order_status_log (order_id,from_status,to_status,changed_by,note) VALUES (?,?,?,?,?)")
             ->execute([$order['id'], $order['status'], $newStatus, $user['id'], $note ?: null]);
 
-        // Stock deducts once, at dispatch time
-        if ($newStatus === 'dispatched' && !$order['stock_deducted']) {
+        // Stock deducts once, the first time the order reaches a shipped state
+        if ($enteringShipped) {
             adjustOrderStock($pdo, $order['id'], 'sale', -1, $user['id'], "Dispatched {$orderId}");
             $pdo->prepare("UPDATE orders SET stock_deducted=1 WHERE id=?")->execute([$order['id']]);
         }
