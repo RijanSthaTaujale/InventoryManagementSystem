@@ -327,7 +327,7 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     // Started from Start Exchange/Return with item(s) picked to give back
     // but nothing new added — that's just a Return, not an exchange. No
     // replacement order gets created; the claimed item(s) still go through
-    // the same deferred-receipt flow (see Exchanges page) since the whole
+    // the same deferred-receipt flow (see Returns page) since the whole
     // point of that page is confirming physical receipt, whether or not a
     // replacement was ever involved.
     $isPureReturn = $exchangeFromOrderId !== '' && empty($items);
@@ -503,7 +503,7 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         // Exchange/Return claim: claim the item(s) being given up against
         // the original order now (reduces its total immediately) — stock/
         // returned_qty for them stays untouched until physically received
-        // on the Exchanges page. Whatever was already paid for them gets
+        // on the Returns page. Whatever was already paid for them gets
         // credited forward onto the replacement order (if any) instead of
         // asking the customer to pay for that value twice.
         if (!empty($validatedReturnItems)) {
@@ -808,7 +808,7 @@ if ($action === 'status' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         // items were already partially returned via the per-item Return
         // action — and any qty already claimed by a pending (unreceived)
         // exchange is left alone here too, so it isn't settled twice once
-        // that exchange is later received on the Exchanges page.
+        // that exchange is later received on the Returns page.
         if ($newStatus === 'returned' && !$order['stock_restored']) {
             $returnItemsStmt = $pdo->prepare("SELECT * FROM order_items WHERE order_id=? AND product_id IS NOT NULL");
             $returnItemsStmt->execute([$order['id']]);
@@ -1058,7 +1058,7 @@ if ($action === 'delete_order' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $pendingStmt = $pdo->prepare("SELECT 1 FROM order_returns WHERE order_id=? AND is_exchange=1 AND received_at IS NULL LIMIT 1");
     $pendingStmt->execute([$order['id']]);
     if ($pendingStmt->fetch()) {
-        echo json_encode(['success' => false, 'message' => 'This order has a pending exchange claim awaiting receipt — resolve it on the Exchanges page first.']); exit;
+        echo json_encode(['success' => false, 'message' => 'This order has a pending exchange claim awaiting receipt — resolve it on the Returns page first.']); exit;
     }
 
     $pdo->beginTransaction();

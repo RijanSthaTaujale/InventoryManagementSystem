@@ -7,7 +7,7 @@ $user = currentUser();
 if (!in_array($user['role'], ['admin', 'supervisor'], true)) redirect('/pages/dashboard.php');
 
 $activePage = 'exchanges';
-$pageTitle  = 'Exchanges';
+$pageTitle  = 'Returns';
 $currency   = 'Rs';
 
 $page    = max(1, (int)($_GET['page'] ?? 1));
@@ -99,9 +99,9 @@ include __DIR__ . '/../../components/head.php';
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> Orders
             </a>
             <span style="color:var(--text-muted);font-size:.82rem">/</span>
-            <span style="font-size:.82rem">Exchanges</span>
+            <span style="font-size:.82rem">Returns</span>
           </div>
-          <h1 style="font-size:1.25rem;font-weight:700">Exchanges</h1>
+          <h1 style="font-size:1.25rem;font-weight:700">Returns</h1>
           <p style="font-size:.82rem;color:var(--text-secondary);margin-top:2px">
             <?= number_format($pendingCount) ?> pending · <?= number_format($pendingUnits) ?> units awaiting receipt
           </p>

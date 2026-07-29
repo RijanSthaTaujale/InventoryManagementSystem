@@ -157,7 +157,7 @@ include __DIR__ . '/../../components/head.php';
           <!-- Items Being Returned -->
           <div class="card" style="border:1px solid #fde68a;background:#fffbeb">
             <div class="card-title" style="margin-bottom:2px">Items Being Returned</div>
-            <p style="font-size:.8rem;color:var(--text-secondary);margin-bottom:14px">From order <?= e($exchangeFromOrder['order_id']) ?> — select what the customer is giving back. Add a replacement product below for an exchange, or leave it empty for a plain return — either way, stock won't change until it's confirmed received on the Exchanges page.</p>
+            <p style="font-size:.8rem;color:var(--text-secondary);margin-bottom:14px">From order <?= e($exchangeFromOrder['order_id']) ?> — select what the customer is giving back. Add a replacement product below for an exchange, or leave it empty for a plain return — either way, stock won't change until it's confirmed received on the Returns page.</p>
             <div style="display:flex;flex-direction:column;gap:8px">
               <?php foreach ($returnCandidates as $rc): ?>
               <label style="display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--border);border-radius:var(--radius-md);cursor:pointer;background:#fff">
