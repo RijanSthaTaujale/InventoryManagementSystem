@@ -13,6 +13,10 @@ $currency   = 'Rs';
 $page    = max(1, (int)($_GET['page'] ?? 1));
 $perPage = 20;
 
+$search   = trim($_GET['search'] ?? '');
+$dateFrom = $_GET['date_from'] ?? '';
+$dateTo   = $_GET['date_to']   ?? '';
+
 // Status is derived (received_at/received_damaged), not a stored enum, so
 // the filter translates to a condition rather than a plain column match.
 $statusFilter = $_GET['status'] ?? '';
@@ -22,7 +26,9 @@ elseif ($statusFilter === 'received')  $statusWhere = 'AND r.received_at IS NOT 
 elseif ($statusFilter === 'damaged')   $statusWhere = 'AND r.received_at IS NOT NULL AND r.received_damaged = 1';
 else $statusFilter = '';
 
-// Counts for the tab bar (always unfiltered, so switching tabs shows stable totals)
+// Counts for the tab bar (always unfiltered by search/date/status, so the
+// tabs show stable totals no matter what's currently searched/filtered —
+// same convention as the status tabs on the Orders list).
 $statusCounts = [
     ''         => (int)$pdo->query("SELECT COUNT(*) FROM order_returns WHERE is_exchange=1")->fetchColumn(),
     'pending'  => (int)$pdo->query("SELECT COUNT(*) FROM order_returns WHERE is_exchange=1 AND received_at IS NULL")->fetchColumn(),
@@ -30,9 +36,28 @@ $statusCounts = [
     'damaged'  => (int)$pdo->query("SELECT COUNT(*) FROM order_returns WHERE is_exchange=1 AND received_at IS NOT NULL AND received_damaged=1")->fetchColumn(),
 ];
 
+$searchWhere = '';
+$searchParams = [];
+if ($search) {
+    $searchWhere = "AND (o.order_id LIKE ? OR o.customer_name LIKE ? OR o.customer_phone LIKE ? OR oi.product_name LIKE ? OR n.order_id LIKE ?)";
+    $like = "%$search%";
+    $searchParams = [$like, $like, $like, $like, $like];
+}
+$dateWhere = '';
+if ($dateFrom) { $dateWhere .= " AND DATE(r.created_at) >= ?"; $searchParams[] = $dateFrom; }
+if ($dateTo)   { $dateWhere .= " AND DATE(r.created_at) <= ?"; $searchParams[] = $dateTo; }
+
 // The list shows full history, not just what's pending — settled rows stay
 // visible (marked Received/Damaged) rather than disappearing once actioned.
-$total      = $statusCounts[$statusFilter];
+$countStmt = $pdo->prepare("
+    SELECT COUNT(*) FROM order_returns r
+    JOIN order_items oi ON oi.id = r.order_item_id
+    JOIN orders o ON o.id = r.order_id
+    LEFT JOIN orders n ON n.id = r.new_order_id
+    WHERE r.is_exchange = 1 $statusWhere $searchWhere $dateWhere
+");
+$countStmt->execute($searchParams);
+$total      = (int)$countStmt->fetchColumn();
 $totalPages = max(1, ceil($total / $perPage));
 $page       = min($page, $totalPages);
 $offset     = ($page - 1) * $perPage;
@@ -47,17 +72,17 @@ $stmt = $pdo->prepare("
     JOIN orders o ON o.id = r.order_id
     LEFT JOIN orders n ON n.id = r.new_order_id
     LEFT JOIN users u ON u.id = r.returned_by
-    WHERE r.is_exchange = 1 $statusWhere
+    WHERE r.is_exchange = 1 $statusWhere $searchWhere $dateWhere
     ORDER BY (r.received_at IS NULL) DESC, r.created_at DESC
     LIMIT $perPage OFFSET $offset
 ");
-$stmt->execute();
+$stmt->execute($searchParams);
 $rows = $stmt->fetchAll();
 
 $pendingCount = $statusCounts['pending'];
 $pendingUnits = (int)$pdo->query("SELECT COALESCE(SUM(qty),0) FROM order_returns WHERE is_exchange=1 AND received_at IS NULL")->fetchColumn();
 
-$baseUrl = APP_URL . '/pages/orders/exchange.php' . ($statusFilter ? '?status=' . urlencode($statusFilter) : '');
+$baseUrl = APP_URL . '/pages/orders/exchange.php?' . http_build_query(array_filter(['status'=>$statusFilter,'search'=>$search,'date_from'=>$dateFrom,'date_to'=>$dateTo]));
 
 include __DIR__ . '/../../components/head.php';
 ?>
@@ -84,13 +109,30 @@ include __DIR__ . '/../../components/head.php';
       </div>
 
       <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
-        <?php foreach (['' => 'All', 'pending' => 'Pending', 'received' => 'Received', 'damaged' => 'Damaged'] as $val => $label): ?>
-        <a href="<?= APP_URL ?>/pages/orders/exchange.php<?= $val ? '?status=' . urlencode($val) : '' ?>"
+        <?php foreach (['' => 'All', 'pending' => 'Pending', 'received' => 'Received', 'damaged' => 'Damaged'] as $val => $label):
+          $tabQ = http_build_query(array_filter(['status'=>$val,'search'=>$search,'date_from'=>$dateFrom,'date_to'=>$dateTo]));
+        ?>
+        <a href="<?= APP_URL ?>/pages/orders/exchange.php<?= $tabQ ? '?' . $tabQ : '' ?>"
            class="btn btn-sm <?= $statusFilter === $val ? 'btn-primary' : 'btn-outline' ?>">
           <?= $label ?> (<?= number_format($statusCounts[$val]) ?>)
         </a>
         <?php endforeach; ?>
       </div>
+
+      <!-- Search + date filter -->
+      <form method="GET" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+        <?php if ($statusFilter): ?><input type="hidden" name="status" value="<?= e($statusFilter) ?>"><?php endif; ?>
+        <div style="position:relative;flex:1;min-width:220px;max-width:320px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text-muted)"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" name="search" value="<?= e($search) ?>" placeholder="Order ID, customer, phone, product..." class="form-control" style="padding-left:32px">
+        </div>
+        <input type="date" name="date_from" value="<?= e($dateFrom) ?>" class="form-control" style="width:auto" title="From date">
+        <input type="date" name="date_to"   value="<?= e($dateTo)   ?>" class="form-control" style="width:auto" title="To date">
+        <button type="submit" class="btn btn-primary btn-sm">Search</button>
+        <?php if ($search || $dateFrom || $dateTo): ?>
+        <a href="<?= APP_URL ?>/pages/orders/exchange.php<?= $statusFilter ? '?status=' . urlencode($statusFilter) : '' ?>" class="btn btn-outline btn-sm">Clear</a>
+        <?php endif; ?>
+      </form>
 
       <div class="data-table-wrap">
         <table class="data-table">
