@@ -370,7 +370,7 @@ include __DIR__ . '/../../components/head.php';
               ?>
               <td style="font-weight:600">
                 <div><?= $currency ?> <?= number_format($rowAmountDue,0) ?></div>
-                <div style="font-size:.68rem;font-weight:500;color:var(--text-muted);margin-top:2px"><?= $currency ?> <?= number_format($o['total'],0) ?> order value</div>
+                <div style="font-size:.68rem;font-weight:500;color:var(--text-muted);margin-top:2px"><?= $currency ?> <?= number_format($o['total'],0) ?></div>
               </td>
               <?php endif; ?>
               <td>
