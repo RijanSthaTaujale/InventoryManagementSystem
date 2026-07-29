@@ -50,6 +50,22 @@ $exchangedItemIds->execute([$order['id']]);
 $exchangedItemIds = array_flip($exchangedItemIds->fetchAll(PDO::FETCH_COLUMN));
 $orderHasExchange = !empty($exchangedItemIds);
 
+// Qty per item claimed for an exchange but not yet physically received back
+// (see api/orders.php's pendingExchangeQty()) — "spoken for" even though
+// returned_qty hasn't moved yet, so it must be excluded from what's still
+// available to Return or exchange further.
+$pendingByItem = $pdo->prepare("SELECT order_item_id, SUM(qty) AS qty FROM order_returns WHERE order_id=? AND is_exchange=1 AND received_at IS NULL GROUP BY order_item_id");
+$pendingByItem->execute([$order['id']]);
+$pendingByItem = array_column($pendingByItem->fetchAll(), 'qty', 'order_item_id');
+
+$hasExchangeableItem = false;
+foreach ($items as $it) {
+    if ((int)$it['qty'] - (int)$it['returned_qty'] - (int)($pendingByItem[$it['id']] ?? 0) > 0) {
+        $hasExchangeableItem = true;
+        break;
+    }
+}
+
 // Status log
 $logStmt = $pdo->prepare("
     SELECT osl.*, u.name AS changed_by_name
@@ -162,6 +178,9 @@ include __DIR__ . '/../../components/head.php';
           <?php if (in_array($order['status'], ['new', 'pending', 'confirmed'])): ?>
           <a href="<?= APP_URL ?>/pages/orders/create.php?edit=<?= urlencode($order['order_id']) ?>" class="btn btn-outline btn-sm">Edit Order</a>
           <?php endif; ?>
+          <?php if (($isAdmin || $isSuper) && $order['stock_deducted'] && $hasExchangeableItem): ?>
+          <a href="<?= APP_URL ?>/pages/orders/create.php?exchange_from=<?= urlencode($order['order_id']) ?>" class="btn btn-outline btn-sm">Start Exchange</a>
+          <?php endif; ?>
           <a href="<?= APP_URL ?>/pages/orders/create.php" class="btn btn-primary btn-sm">New Order</a>
         </div>
       </div>
@@ -188,7 +207,8 @@ include __DIR__ . '/../../components/head.php';
                 </thead>
                 <tbody>
                   <?php foreach ($items as $item):
-                    $remainingQty = (int)$item['qty'] - (int)$item['returned_qty'];
+                    $pendingQty   = (int)($pendingByItem[$item['id']] ?? 0);
+                    $remainingQty = (int)$item['qty'] - (int)$item['returned_qty'] - $pendingQty;
                   ?>
                   <tr>
                     <td>
@@ -213,6 +233,11 @@ include __DIR__ . '/../../components/head.php';
                             &#8617; <?= (int)$item['returned_qty'] ?> <?= isset($exchangedItemIds[$item['id']]) ? 'exchanged' : 'returned' ?>
                           </div>
                           <?php endif; ?>
+                          <?php if ($pendingQty > 0): ?>
+                          <div style="font-size:.68rem;font-weight:700;color:#d97706;margin-top:2px">
+                            &#8987; <?= $pendingQty ?> unit<?= $pendingQty!=1?'s':'' ?> pending exchange receipt
+                          </div>
+                          <?php endif; ?>
                         </div>
                       </div>
                     </td>
@@ -228,8 +253,6 @@ include __DIR__ . '/../../components/head.php';
                       <div style="display:flex;gap:5px">
                         <button class="btn btn-outline btn-xs"
                                 onclick="openReturnModal(<?= (int)$item['id'] ?>, <?= htmlspecialchars(json_encode($item['product_name']), ENT_QUOTES) ?>, <?= $remainingQty ?>)">Return</button>
-                        <button class="btn btn-outline btn-xs"
-                                onclick="openExchangeModal(<?= (int)$item['id'] ?>, <?= htmlspecialchars(json_encode($item['product_name']), ENT_QUOTES) ?>, <?= $remainingQty ?>)">Exchange</button>
                       </div>
                       <?php endif; ?>
                     </td>
@@ -466,53 +489,6 @@ include __DIR__ . '/../../components/head.php';
   </div>
 </div>
 
-<!-- Exchange item modal -->
-<div id="exchangeModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center">
-  <div style="background:#fff;border-radius:var(--radius-xl);padding:28px;max-width:420px;width:90%;box-shadow:var(--shadow-md);max-height:85vh;overflow-y:auto">
-    <div style="font-size:1.05rem;font-weight:700;margin-bottom:4px">Exchange Item</div>
-    <div style="font-size:.84rem;color:var(--text-secondary);margin-bottom:18px">Returning: <span id="exchangeItemName" style="font-weight:600"></span></div>
-    <div style="display:flex;flex-direction:column;gap:14px">
-      <div class="form-group">
-        <label class="form-label" id="exchangeQtyLabel">Quantity to Exchange</label>
-        <input type="number" id="exchangeQty" class="form-control" min="1" value="1">
-      </div>
-      <div class="form-group" style="display:flex;align-items:center;gap:8px">
-        <input type="checkbox" id="exchangeDamaged" style="width:16px;height:16px">
-        <label for="exchangeDamaged" style="font-size:.85rem;color:var(--text-secondary);margin:0;cursor:pointer">
-          Returned item is damaged — log to Damaged Stock instead of restocking
-        </label>
-      </div>
-      <div class="form-group" style="border-top:1px solid var(--border);padding-top:14px">
-        <label class="form-label">Replacement Product</label>
-        <input type="text" id="exchangeSearch" class="form-control" placeholder="Search product by name, ID or SKU...">
-        <div id="exchangeResults" style="margin-top:6px"></div>
-      </div>
-      <div class="form-group" id="exchangeVariantGroup" style="display:none">
-        <label class="form-label">Variant</label>
-        <select id="exchangeVariantSelect" class="form-control"></select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Replacement Quantity</label>
-        <input type="number" id="exchangeNewQty" class="form-control" min="1" value="1">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Reason</label>
-        <input type="text" id="exchangeReason" class="form-control" placeholder="e.g. Wrong size, customer wants Large instead">
-      </div>
-      <div class="form-group" style="display:flex;align-items:center;gap:8px;border-top:1px solid var(--border);padding-top:14px">
-        <input type="checkbox" id="exchangeAlreadyPaid" style="width:16px;height:16px">
-        <label for="exchangeAlreadyPaid" style="font-size:.85rem;color:var(--text-secondary);margin:0;cursor:pointer">
-          Customer already settled the price difference in person
-        </label>
-      </div>
-    </div>
-    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
-      <button class="btn btn-outline btn-sm" onclick="document.getElementById('exchangeModal').style.display='none'">Cancel</button>
-      <button class="btn btn-primary btn-sm" onclick="submitExchange()">Confirm Exchange</button>
-    </div>
-  </div>
-</div>
-
 <div class="toast-container" id="toastContainer"></div>
 
 <script>
@@ -587,92 +563,6 @@ async function submitReturn() {
   else showToast(d.message || 'Failed', 'error');
 }
 
-let exchangeItemId = null;
-let exchangeSelectedProduct = null;
-let exchangeSearchTimer = null;
-
-function openExchangeModal(itemId, name, maxQty) {
-  exchangeItemId = itemId;
-  exchangeSelectedProduct = null;
-  document.getElementById('exchangeItemName').textContent = name;
-  document.getElementById('exchangeQtyLabel').textContent = `Quantity to Exchange (max ${maxQty})`;
-  document.getElementById('exchangeQty').max = maxQty;
-  document.getElementById('exchangeQty').value = maxQty;
-  document.getElementById('exchangeNewQty').value = maxQty;
-  document.getElementById('exchangeDamaged').checked = false;
-  document.getElementById('exchangeReason').value = '';
-  document.getElementById('exchangeAlreadyPaid').checked = false;
-  document.getElementById('exchangeSearch').value = '';
-  document.getElementById('exchangeResults').innerHTML = '';
-  document.getElementById('exchangeVariantGroup').style.display = 'none';
-  document.getElementById('exchangeVariantSelect').innerHTML = '';
-  document.getElementById('exchangeModal').style.display = 'flex';
-}
-
-document.getElementById('exchangeSearch').addEventListener('input', function() {
-  clearTimeout(exchangeSearchTimer);
-  const q = this.value.trim();
-  const resultsBox = document.getElementById('exchangeResults');
-  if (q.length < 2) { resultsBox.innerHTML = ''; return; }
-  exchangeSearchTimer = setTimeout(async () => {
-    const r = await fetch(`${APP_URL}/api/products.php?action=search&q=${encodeURIComponent(q)}`);
-    const d = await r.json();
-    resultsBox.innerHTML = (d.products || []).map((p, i) =>
-      `<div onclick="event.stopPropagation(); pickExchangeProduct(${i})" style="padding:8px;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;margin-bottom:4px;font-size:.84rem">
-        <div style="font-weight:600">${p.name}</div>
-        <div style="font-size:.74rem;color:var(--text-muted)">${p.product_id} &nbsp;·&nbsp; Rs ${p.sell_price} &nbsp;·&nbsp; ${p.quantity} in stock${p.variants.length ? ' &nbsp;·&nbsp; ' + p.variants.length + ' variant(s)' : ''}</div>
-      </div>`
-    ).join('') || '<div style="font-size:.8rem;color:var(--text-muted);padding:8px">No products found</div>';
-    window.__exchangeSearchResults = d.products || [];
-  }, 300);
-});
-
-function pickExchangeProduct(i) {
-  const p = window.__exchangeSearchResults[i];
-  exchangeSelectedProduct = p;
-  document.getElementById('exchangeSearch').value = `${p.name} (${p.product_id})`;
-  document.getElementById('exchangeResults').innerHTML = '';
-
-  const variantGroup = document.getElementById('exchangeVariantGroup');
-  const variantSelect = document.getElementById('exchangeVariantSelect');
-  if (p.variants && p.variants.length) {
-    variantSelect.innerHTML = p.variants.map(v => `<option value="${v.id}">${v.label}: ${v.value} — Rs ${v.sell_price} (${v.qty_adj} in stock)</option>`).join('');
-    variantGroup.style.display = '';
-  } else {
-    variantGroup.style.display = 'none';
-    variantSelect.innerHTML = '';
-  }
-}
-
-async function submitExchange() {
-  const qty     = parseInt(document.getElementById('exchangeQty').value) || 0;
-  const newQty  = parseInt(document.getElementById('exchangeNewQty').value) || 0;
-  const damaged = document.getElementById('exchangeDamaged').checked;
-  const reason  = document.getElementById('exchangeReason').value.trim();
-  const alreadyPaid = document.getElementById('exchangeAlreadyPaid').checked;
-
-  if (qty < 1) { showToast('Enter a valid quantity to exchange', 'error'); return; }
-  if (!exchangeSelectedProduct) { showToast('Pick a replacement product', 'error'); return; }
-  if (newQty < 1) { showToast('Enter a valid replacement quantity', 'error'); return; }
-
-  const variantGroup = document.getElementById('exchangeVariantGroup');
-  const newVariantId = variantGroup.style.display !== 'none' ? document.getElementById('exchangeVariantSelect').value : null;
-
-  const r = await fetch(`${APP_URL}/api/orders.php?action=exchange_item`, {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({
-      item_id: exchangeItemId, qty, damaged, reason,
-      already_paid: alreadyPaid,
-      new_product_id: exchangeSelectedProduct.id,
-      new_variant_id: newVariantId,
-      new_qty: newQty,
-    })
-  });
-  const d = await r.json();
-  document.getElementById('exchangeModal').style.display = 'none';
-  if (d.success) { showToast('Exchange processed', 'success'); setTimeout(() => location.reload(), 700); }
-  else showToast(d.message || 'Failed', 'error');
-}
 <?php endif; ?>
 </script>
 <?php include __DIR__ . '/../../components/foot.php'; ?>

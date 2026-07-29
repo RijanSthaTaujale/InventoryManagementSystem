@@ -32,7 +32,37 @@ if ($isEditMode) {
     $orderItems = $itemsStmt->fetchAll();
 }
 
-$pageTitle = $isEditMode ? 'Edit Order' : 'New Order';
+// Exchange: this page also handles the "create the replacement order" step —
+// same form, just prefilled with the original order's customer details plus
+// a card listing what's being given up.
+$exchangeFromOrderId = trim($_GET['exchange_from'] ?? '');
+$isExchangeMode      = $exchangeFromOrderId !== '' && !$isEditMode;
+$exchangeFromOrder   = null;
+$returnCandidates    = [];
+
+if ($isExchangeMode) {
+    $stmt = $pdo->prepare("SELECT * FROM orders WHERE order_id=?");
+    $stmt->execute([$exchangeFromOrderId]);
+    $exchangeFromOrder = $stmt->fetch();
+    if (!$exchangeFromOrder || !$exchangeFromOrder['stock_deducted']) redirect('/pages/orders/index.php');
+
+    $candStmt = $pdo->prepare("
+        SELECT oi.id AS item_id, oi.product_name, oi.variant_info, oi.qty, oi.returned_qty, oi.sell_price,
+               COALESCE((SELECT SUM(qty) FROM order_returns WHERE order_item_id=oi.id AND is_exchange=1 AND received_at IS NULL), 0) AS pending_qty
+        FROM order_items oi
+        WHERE oi.order_id=? AND oi.product_id IS NOT NULL
+    ");
+    $candStmt->execute([$exchangeFromOrder['id']]);
+    foreach ($candStmt->fetchAll() as $c) {
+        $remaining = (int)$c['qty'] - (int)$c['returned_qty'] - (int)$c['pending_qty'];
+        if ($remaining > 0) {
+            $c['remaining'] = $remaining;
+            $returnCandidates[] = $c;
+        }
+    }
+}
+
+$pageTitle = $isEditMode ? 'Edit Order' : ($isExchangeMode ? 'Exchange Order' : 'New Order');
 
 // Generate next order ID preview (only relevant when creating)
 if (!$isEditMode) {
@@ -60,15 +90,15 @@ include __DIR__ . '/../../components/head.php';
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> Orders
             </a>
             <span style="color:var(--text-muted);font-size:.82rem">/</span>
-            <span style="font-size:.82rem"><?= $isEditMode ? 'Edit Order' : 'New Order' ?></span>
+            <span style="font-size:.82rem"><?= $isEditMode ? 'Edit Order' : ($isExchangeMode ? 'Exchange Order' : 'New Order') ?></span>
           </div>
-          <h1 style="font-size:1.25rem;font-weight:700"><?= $isEditMode ? 'Edit Order — ' . e($order['order_id']) : 'Add New Order' ?></h1>
+          <h1 style="font-size:1.25rem;font-weight:700"><?= $isEditMode ? 'Edit Order — ' . e($order['order_id']) : ($isExchangeMode ? 'Create Exchange Order — for ' . e($exchangeFromOrder['order_id']) : 'Add New Order') ?></h1>
         </div>
         <div style="display:flex;gap:8px">
-          <a href="<?= APP_URL ?>/pages/orders/<?= $isEditMode ? 'view.php?id=' . urlencode($order['order_id']) : 'index.php' ?>" class="btn btn-outline btn-sm">Cancel</a>
+          <a href="<?= APP_URL ?>/pages/orders/<?= $isEditMode ? 'view.php?id=' . urlencode($order['order_id']) : ($isExchangeMode ? 'view.php?id=' . urlencode($exchangeFromOrder['order_id']) : 'index.php') ?>" class="btn btn-outline btn-sm">Cancel</a>
           <button class="btn btn-primary" onclick="submitOrder()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/></svg>
-            <?= $isEditMode ? 'Update Order' : 'Place Order' ?>
+            <?= $isEditMode ? 'Update Order' : ($isExchangeMode ? 'Create Exchange Order' : 'Place Order') ?>
           </button>
         </div>
       </div>
@@ -122,6 +152,38 @@ include __DIR__ . '/../../components/head.php';
               <input type="number" id="extraChargeAmt" min="0" step="0.01" value="0" class="form-control" style="max-width:110px" oninput="recalc()">
             </div>
           </div>
+
+          <?php if ($isExchangeMode): ?>
+          <!-- Items Being Returned -->
+          <div class="card" style="border:1px solid #fde68a;background:#fffbeb">
+            <div class="card-title" style="margin-bottom:2px">Items Being Returned</div>
+            <p style="font-size:.8rem;color:var(--text-secondary);margin-bottom:14px">From order <?= e($exchangeFromOrder['order_id']) ?> — select what the customer is giving back. Stock won't change until it's confirmed received on the Exchanges page.</p>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <?php foreach ($returnCandidates as $rc): ?>
+              <label style="display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--border);border-radius:var(--radius-md);cursor:pointer;background:#fff">
+                <input type="checkbox" class="return-item-check" data-item-id="<?= (int)$rc['item_id'] ?>" onchange="toggleReturnQty(this)" style="width:16px;height:16px;flex-shrink:0">
+                <div style="flex:1">
+                  <div style="font-weight:600;font-size:.85rem"><?= e($rc['product_name']) ?></div>
+                  <?php if ($rc['variant_info']): ?>
+                  <div style="font-size:.74rem;color:var(--text-muted)"><?= e($rc['variant_info']) ?></div>
+                  <?php endif; ?>
+                </div>
+                <input type="number" class="return-item-qty form-control" data-item-id="<?= (int)$rc['item_id'] ?>"
+                       min="1" max="<?= (int)$rc['remaining'] ?>" value="<?= (int)$rc['remaining'] ?>" disabled
+                       style="width:70px;text-align:center">
+                <span style="font-size:.74rem;color:var(--text-muted);white-space:nowrap">of <?= (int)$rc['remaining'] ?></span>
+              </label>
+              <?php endforeach; ?>
+              <?php if (empty($returnCandidates)): ?>
+              <div style="text-align:center;color:var(--text-muted);padding:16px;font-size:.85rem">Nothing left to exchange on this order</div>
+              <?php endif; ?>
+            </div>
+            <div class="form-group" style="margin-top:14px">
+              <label class="form-label">Exchange Reason</label>
+              <input type="text" id="returnReason" class="form-control" placeholder="e.g. Wrong size, customer wants a different color">
+            </div>
+          </div>
+          <?php endif; ?>
 
           <!-- Customer & Shipping -->
           <div class="card">
@@ -253,7 +315,7 @@ include __DIR__ . '/../../components/head.php';
 
           <button class="btn btn-primary" style="width:100%" onclick="submitOrder()">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-            <?= $isEditMode ? 'Update Order' : 'Place Order' ?>
+            <?= $isEditMode ? 'Update Order' : ($isExchangeMode ? 'Create Exchange Order' : 'Place Order') ?>
           </button>
           <div id="orderError" style="display:none;padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:var(--radius-md);color:#b91c1c;font-size:.83rem"></div>
         </div>
@@ -298,9 +360,19 @@ include __DIR__ . '/../../components/head.php';
 <div class="toast-container" id="toastContainer"></div>
 
 <script>
-const APP_URL  = '<?= APP_URL ?>';
-const CURRENCY = '<?= $currency ?>';
-const IS_EDIT  = <?= $isEditMode ? 'true' : 'false' ?>;
+const APP_URL     = '<?= APP_URL ?>';
+const CURRENCY    = '<?= $currency ?>';
+const IS_EDIT     = <?= $isEditMode ? 'true' : 'false' ?>;
+const IS_EXCHANGE = <?= $isExchangeMode ? 'true' : 'false' ?>;
+<?php if ($isExchangeMode): ?>
+const PREFILL_ORDER = <?= json_encode([
+    'original_order_id' => $exchangeFromOrder['order_id'],
+    'customer_name'      => $exchangeFromOrder['customer_name'],
+    'customer_phone'     => $exchangeFromOrder['customer_phone'],
+    'customer_address'   => $exchangeFromOrder['customer_address'],
+    'fb_page_id'         => $exchangeFromOrder['fb_page_id'],
+]) ?>;
+<?php endif; ?>
 <?php if ($isEditMode): ?>
 const EDIT_ORDER = <?= json_encode([
     'order_id'        => $order['order_id'],
@@ -454,6 +526,13 @@ function updateQty(i, v)   { items[i].qty = Math.max(1, parseInt(v)||1); renderI
 function updatePrice(i, v) { items[i].sell_price = Math.max(0, parseFloat(v)||0); renderItems(); recalc(); }
 function removeItem(i)     { items.splice(i,1); renderItems(); recalc(); }
 
+// Exchange mode: the qty input for a "being returned" row only accepts a
+// value once its checkbox is ticked.
+function toggleReturnQty(cb) {
+  const qtyInput = document.querySelector(`.return-item-qty[data-item-id="${cb.dataset.itemId}"]`);
+  qtyInput.disabled = !cb.checked;
+}
+
 function recalc() {
   const subtotal = items.reduce((s, i) => s + i.qty * i.sell_price, 0);
   const discAmt  = parseFloat(document.getElementById('discountAmt').value) || 0;
@@ -597,6 +676,15 @@ async function submitOrder() {
   if (!/^\d{10}$/.test(custPhone)) { errDiv.textContent='Phone number must be exactly 10 digits.'; errDiv.style.display='block'; return; }
   if (!items.length)          { errDiv.textContent='Add at least one product.'; errDiv.style.display='block'; return; }
 
+  let returnItems = [];
+  if (IS_EXCHANGE) {
+    returnItems = [...document.querySelectorAll('.return-item-check:checked')].map(cb => ({
+      item_id: parseInt(cb.dataset.itemId),
+      qty: parseInt(document.querySelector(`.return-item-qty[data-item-id="${cb.dataset.itemId}"]`).value) || 0,
+    })).filter(ri => ri.qty > 0);
+    if (!returnItems.length) { errDiv.textContent='Select at least one item the customer is returning.'; errDiv.style.display='block'; return; }
+  }
+
   // Re-check the blacklist right here (not just relying on the onblur check) so
   // the warning always fires at the moment of placing the order.
   const blCheck = await fetch(`${APP_URL}/api/orders.php?action=check_blacklist&phone=${encodeURIComponent(custPhone)}`);
@@ -632,13 +720,18 @@ async function submitOrder() {
     subtotal,
     total,
     remarks:          document.getElementById('remarks').value.trim(),
+    ...(IS_EXCHANGE ? {
+      exchange_from_order_id: PREFILL_ORDER.original_order_id,
+      return_items:            returnItems,
+      return_reason:           document.getElementById('returnReason').value.trim(),
+    } : {}),
     items: items.map(i => ({ product_id: i.id, product_name: i.name, qty: i.qty, sell_price: i.sell_price, buy_price: i.buy_price, total: i.qty * i.sell_price, variant_id: i.variant_id ?? null, variant_info: i.variant_info ?? null }))
   };
   if (IS_EDIT) payload.order_id = EDIT_ORDER.order_id;
 
   const btns = document.querySelectorAll('button.btn-primary');
-  const busyLabel = IS_EDIT ? 'Updating...' : 'Placing...';
-  const idleLabel = IS_EDIT ? 'Update Order' : 'Place Order';
+  const busyLabel = IS_EDIT ? 'Updating...' : (IS_EXCHANGE ? 'Creating exchange...' : 'Placing...');
+  const idleLabel = IS_EDIT ? 'Update Order' : (IS_EXCHANGE ? 'Create Exchange Order' : 'Place Order');
   btns.forEach(b => { b.disabled = true; b.innerHTML = `<span class="spinner"></span> ${busyLabel}`; });
 
   try {
@@ -647,7 +740,7 @@ async function submitOrder() {
     });
     const d = await r.json();
     if (d.success) {
-      showToast(IS_EDIT ? 'Order updated!' : 'Order created!','success');
+      showToast(IS_EDIT ? 'Order updated!' : (IS_EXCHANGE ? 'Exchange order created!' : 'Order created!'),'success');
       setTimeout(() => window.location.href = `${APP_URL}/pages/orders/view.php?id=${d.order_id}`, 700);
     } else {
       errDiv.textContent = d.message || `Failed to ${IS_EDIT ? 'update' : 'create'} order.`;
@@ -659,6 +752,14 @@ async function submitOrder() {
     errDiv.style.display = 'block';
     btns.forEach(b => { b.disabled = false; b.textContent = idleLabel; });
   }
+}
+
+// ── Prefill customer details when creating an Exchange order ──
+if (IS_EXCHANGE) {
+  document.getElementById('custName').value    = PREFILL_ORDER.customer_name || '';
+  document.getElementById('custPhone').value   = PREFILL_ORDER.customer_phone || '';
+  document.getElementById('custAddress').value = PREFILL_ORDER.customer_address || '';
+  if (PREFILL_ORDER.fb_page_id) document.getElementById('fbPage').value = PREFILL_ORDER.fb_page_id;
 }
 
 // ── Prefill form when editing an existing order ───────────────

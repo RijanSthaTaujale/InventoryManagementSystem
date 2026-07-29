@@ -231,6 +231,7 @@ CREATE TABLE IF NOT EXISTS `orders` (
   `remarks`         TEXT           DEFAULT NULL COMMENT 'Staff message / notes',
   `supervisor_remarks` TEXT        DEFAULT NULL,
   `assigned_to`     INT UNSIGNED   DEFAULT NULL COMMENT 'Staff user handling this order',
+  `exchanged_from_order_id` INT UNSIGNED DEFAULT NULL COMMENT 'If this order was created via Exchange, the original order it replaces items from',
   `dispatched_by`   INT UNSIGNED   DEFAULT NULL,
   `dispatched_at`   DATETIME       DEFAULT NULL,
   `delivered_at`    DATETIME       DEFAULT NULL,
@@ -243,6 +244,7 @@ CREATE TABLE IF NOT EXISTS `orders` (
   FOREIGN KEY (`customer_id`)   REFERENCES `customers`(`id`) ON DELETE SET NULL,
   FOREIGN KEY (`fb_page_id`)    REFERENCES `fb_pages`(`id`)  ON DELETE SET NULL,
   FOREIGN KEY (`assigned_to`)   REFERENCES `users`(`id`)     ON DELETE SET NULL,
+  FOREIGN KEY (`exchanged_from_order_id`) REFERENCES `orders`(`id`) ON DELETE SET NULL,
   FOREIGN KEY (`dispatched_by`) REFERENCES `users`(`id`)     ON DELETE SET NULL,
   FOREIGN KEY (`created_by`)    REFERENCES `users`(`id`)     ON DELETE SET NULL,
   FOREIGN KEY (`updated_by`)    REFERENCES `users`(`id`)     ON DELETE SET NULL,
@@ -250,6 +252,7 @@ CREATE TABLE IF NOT EXISTS `orders` (
   INDEX `idx_customer`   (`customer_id`),
   INDEX `idx_created_at` (`created_at`),
   INDEX `idx_phone_created` (`customer_phone`, `created_at`),
+  INDEX `idx_exchanged_from` (`exchanged_from_order_id`),
   FULLTEXT INDEX `ft_order` (`order_id`, `customer_name`, `customer_phone`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -283,11 +286,16 @@ CREATE TABLE IF NOT EXISTS `order_returns` (
   `is_exchange`   TINYINT(1)     NOT NULL DEFAULT 0 COMMENT 'If true, this return was part of an Exchange, not a standalone Return',
   `reason`        TEXT           DEFAULT NULL,
   `returned_by`   INT UNSIGNED   DEFAULT NULL,
+  `new_order_id`  INT UNSIGNED   DEFAULT NULL COMMENT 'For is_exchange=1 rows: the new order created to hold the replacement item(s)',
+  `received_at`   DATETIME       DEFAULT NULL COMMENT 'For is_exchange=1 rows: when the item was physically received and stock/returned_qty were settled. NULL = pending receipt. Always NULL for plain returns.',
+  `received_damaged` TINYINT(1)  NOT NULL DEFAULT 0 COMMENT 'Set at receipt time if staff mark the received exchange item damaged (logged to Damaged Stock instead of restocked)',
   `created_at`    DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (`order_id`)      REFERENCES `orders`(`id`)      ON DELETE CASCADE,
   FOREIGN KEY (`order_item_id`) REFERENCES `order_items`(`id`) ON DELETE CASCADE,
   FOREIGN KEY (`returned_by`)   REFERENCES `users`(`id`)       ON DELETE SET NULL,
-  INDEX `idx_order` (`order_id`)
+  FOREIGN KEY (`new_order_id`)  REFERENCES `orders`(`id`)      ON DELETE SET NULL,
+  INDEX `idx_order` (`order_id`),
+  INDEX `idx_pending_exchange` (`order_item_id`, `is_exchange`, `received_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Order status history log

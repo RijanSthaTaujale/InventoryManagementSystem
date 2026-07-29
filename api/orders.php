@@ -120,61 +120,73 @@ function adjustOrderStock(PDO $pdo, int $orderDbId, string $adjType, int $direct
     }
 }
 
-// Un-deducts stock for a specific qty of a single order item — unless
+// Un-deducts stock for a specific qty of a single product/variant — unless
 // it's coming back damaged, in which case it's logged to Damaged Stock
-// instead of being put back up for sale. Either way it records the
-// return against that line (returned_qty) and the order (order_returns +
-// a reduced subtotal/total). Shared by the standalone per-item "Return"
-// action, the "Exchange" action, and the whole-order "Returned" status
-// change, so a line already partially returned is never double-counted
-// no matter which path triggers the rest of it.
-function returnOrderItem(PDO $pdo, array $item, int $qty, int $userId, string $orderRef, ?string $reason, bool $damaged = false, bool $isExchange = false): float {
+// instead of being put back up for sale (mirrors api/inventory.php's
+// log_damage). Shared by returnOrderItem() (immediate return/exchange
+// settlement) and receiveExchangeReturn() (deferred exchange settlement,
+// once the physical item is actually back in hand) so the restock-or-log
+// logic never has to be duplicated between the two.
+function settleReturnedUnit(PDO $pdo, int $productId, ?int $variantId, int $qty, int $userId, string $orderRef, ?string $reason, bool $damaged): void {
+    if (!$productId) return;
+
+    if ($damaged) {
+        // The unit isn't sellable — don't touch qty_adj/quantity at all,
+        // just record the loss.
+        $pdo->prepare("INSERT INTO damaged_products (product_id, qty, reason, logged_by) VALUES (?,?,?,?)")
+            ->execute([$productId, $qty, $reason ?: "Damaged on return ({$orderRef})", $userId]);
+
+        $qtyStmt = $pdo->prepare("SELECT quantity FROM products WHERE id=?");
+        $qtyStmt->execute([$productId]);
+        $qtyNow = (int)$qtyStmt->fetchColumn();
+        $pdo->prepare("INSERT INTO stock_adjustments (product_id,type,qty_before,qty_change,qty_after,reference,reason,adjusted_by) VALUES (?,'damaged',?,0,?,?,?,?)")
+            ->execute([$productId, $qtyNow, $qtyNow, $orderRef, $reason ?: 'Damaged on return, not restocked', $userId]);
+        return;
+    }
+
+    if ($variantId) {
+        $vRow = $pdo->prepare("SELECT qty_adj FROM product_variants WHERE id=? AND product_id=?");
+        $vRow->execute([$variantId, $productId]);
+        if ($vRow->fetch()) {
+            $pdo->prepare("UPDATE product_variants SET qty_adj = qty_adj + ? WHERE id=?")->execute([$qty, $variantId]);
+        }
+    }
+
+    $row = $pdo->prepare("SELECT quantity, min_stock_level FROM products WHERE id=?");
+    $row->execute([$productId]);
+    $product = $row->fetch();
+    if (!$product) return;
+
+    $qtyBefore = (int)$product['quantity'];
+    $min       = (int)$product['min_stock_level'];
+
+    if ($variantId) {
+        $sumStmt = $pdo->prepare("SELECT COALESCE(SUM(qty_adj),0) FROM product_variants WHERE product_id=?");
+        $sumStmt->execute([$productId]);
+        $qtyAfter = (int)$sumStmt->fetchColumn();
+    } else {
+        $qtyAfter = $qtyBefore + $qty;
+    }
+    $stockStatus = $qtyAfter <= 0 ? 'outofstock' : ($qtyAfter <= 2 ? 'critical' : ($qtyAfter <= $min ? 'lowstock' : 'instock'));
+
+    $pdo->prepare("UPDATE products SET quantity=?, stock_status=? WHERE id=?")->execute([$qtyAfter, $stockStatus, $productId]);
+    $pdo->prepare("INSERT INTO stock_adjustments (product_id,type,qty_before,qty_change,qty_after,reference,reason,adjusted_by) VALUES (?,'return',?,?,?,?,?,?)")
+        ->execute([$productId, $qtyBefore, $qty, $qtyAfter, $orderRef, $reason, $userId]);
+}
+
+// Un-deducts stock for a specific qty of a single order item and records
+// the return against that line (returned_qty) and the order (order_returns
+// + a reduced subtotal/total), all settled immediately. Shared by the
+// standalone per-item "Return" action and the whole-order "Returned" status
+// change, so a line already partially returned is never double-counted no
+// matter which path triggers the rest of it. NOT used by Exchange anymore —
+// see claimExchangeReturn()/receiveExchangeReturn() below, which defer the
+// stock/returned_qty half until physical receipt is confirmed.
+function returnOrderItem(PDO $pdo, array $item, int $qty, int $userId, string $orderRef, ?string $reason, bool $damaged = false): float {
     $productId = (int)($item['product_id'] ?? 0);
     $variantId = $item['variant_id'] !== null ? (int)$item['variant_id'] : null;
 
-    if ($productId) {
-        if ($damaged) {
-            // The unit isn't sellable — don't touch qty_adj/quantity at all,
-            // just record the loss (mirrors api/inventory.php's log_damage).
-            $pdo->prepare("INSERT INTO damaged_products (product_id, qty, reason, logged_by) VALUES (?,?,?,?)")
-                ->execute([$productId, $qty, $reason ?: "Damaged on return ({$orderRef})", $userId]);
-
-            $qtyStmt = $pdo->prepare("SELECT quantity FROM products WHERE id=?");
-            $qtyStmt->execute([$productId]);
-            $qtyNow = (int)$qtyStmt->fetchColumn();
-            $pdo->prepare("INSERT INTO stock_adjustments (product_id,type,qty_before,qty_change,qty_after,reference,reason,adjusted_by) VALUES (?,'damaged',?,0,?,?,?,?)")
-                ->execute([$productId, $qtyNow, $qtyNow, $orderRef, $reason ?: 'Damaged on return, not restocked', $userId]);
-        } else {
-            if ($variantId) {
-                $vRow = $pdo->prepare("SELECT qty_adj FROM product_variants WHERE id=? AND product_id=?");
-                $vRow->execute([$variantId, $productId]);
-                if ($vRow->fetch()) {
-                    $pdo->prepare("UPDATE product_variants SET qty_adj = qty_adj + ? WHERE id=?")->execute([$qty, $variantId]);
-                }
-            }
-
-            $row = $pdo->prepare("SELECT quantity, min_stock_level FROM products WHERE id=?");
-            $row->execute([$productId]);
-            $product = $row->fetch();
-            if ($product) {
-                $qtyBefore = (int)$product['quantity'];
-                $min       = (int)$product['min_stock_level'];
-
-                if ($variantId) {
-                    $sumStmt = $pdo->prepare("SELECT COALESCE(SUM(qty_adj),0) FROM product_variants WHERE product_id=?");
-                    $sumStmt->execute([$productId]);
-                    $qtyAfter = (int)$sumStmt->fetchColumn();
-                } else {
-                    $qtyAfter = $qtyBefore + $qty;
-                }
-                $stockStatus = $qtyAfter <= 0 ? 'outofstock' : ($qtyAfter <= 2 ? 'critical' : ($qtyAfter <= $min ? 'lowstock' : 'instock'));
-
-                $pdo->prepare("UPDATE products SET quantity=?, stock_status=? WHERE id=?")->execute([$qtyAfter, $stockStatus, $productId]);
-                $pdo->prepare("INSERT INTO stock_adjustments (product_id,type,qty_before,qty_change,qty_after,reference,reason,adjusted_by) VALUES (?,'return',?,?,?,?,?,?)")
-                    ->execute([$productId, $qtyBefore, $qty, $qtyAfter, $orderRef, $reason, $userId]);
-            }
-        }
-    }
+    settleReturnedUnit($pdo, $productId, $variantId, $qty, $userId, $orderRef, $reason, $damaged);
 
     $pdo->prepare("UPDATE order_items SET returned_qty = returned_qty + ? WHERE id=?")->execute([$qty, $item['id']]);
 
@@ -182,10 +194,62 @@ function returnOrderItem(PDO $pdo, array $item, int $qty, int $userId, string $o
     $pdo->prepare("UPDATE orders SET subtotal = GREATEST(0, subtotal - ?), total = GREATEST(0, total - ?) WHERE id=?")
         ->execute([$amount, $amount, $item['order_id']]);
 
-    $pdo->prepare("INSERT INTO order_returns (order_id,order_item_id,qty,amount,damaged,is_exchange,reason,returned_by) VALUES (?,?,?,?,?,?,?,?)")
-        ->execute([$item['order_id'], $item['id'], $qty, $amount, $damaged ? 1 : 0, $isExchange ? 1 : 0, $reason, $userId]);
+    $pdo->prepare("INSERT INTO order_returns (order_id,order_item_id,qty,amount,damaged,is_exchange,reason,returned_by,received_at) VALUES (?,?,?,?,?,0,?,?,NOW())")
+        ->execute([$item['order_id'], $item['id'], $qty, $amount, $damaged ? 1 : 0, $reason, $userId]);
 
     return $amount;
+}
+
+// Claims a quantity of an order item for a pending exchange: reduces the
+// ORIGINAL order's total now (the financial commitment happens immediately,
+// independent of physical receipt) and records the claim as pending — but
+// deliberately does NOT touch stock or returned_qty. Those only happen
+// later, in receiveExchangeReturn(), once the physical unit is actually
+// back in hand.
+function claimExchangeReturn(PDO $pdo, array $item, int $qty, int $userId, string $orderRef, ?string $reason, int $newOrderId): float {
+    $amount = round($qty * (float)$item['sell_price'], 2);
+    $pdo->prepare("UPDATE orders SET subtotal = GREATEST(0, subtotal - ?), total = GREATEST(0, total - ?) WHERE id=?")
+        ->execute([$amount, $amount, $item['order_id']]);
+
+    $pdo->prepare("INSERT INTO order_returns (order_id,order_item_id,qty,amount,damaged,is_exchange,reason,returned_by,new_order_id) VALUES (?,?,?,?,0,1,?,?,?)")
+        ->execute([$item['order_id'], $item['id'], $qty, $amount, $reason, $userId, $newOrderId]);
+
+    return $amount;
+}
+
+// Settles a pending exchange claim once the physical item is actually back
+// in hand: restocks it (or logs it to Damaged Stock if it came back
+// damaged), and only now bumps returned_qty — keeping returned_qty an
+// accurate "stock has been settled for this much" signal at all times,
+// which is what the delete-order stock-restore logic relies on.
+function receiveExchangeReturn(PDO $pdo, array $orderReturn, int $userId, bool $damaged): void {
+    settleReturnedUnit(
+        $pdo,
+        (int)$orderReturn['product_id'],
+        $orderReturn['variant_id'] !== null ? (int)$orderReturn['variant_id'] : null,
+        (int)$orderReturn['qty'],
+        $userId,
+        $orderReturn['order_ref'],
+        $orderReturn['reason'],
+        $damaged
+    );
+
+    $pdo->prepare("UPDATE order_items SET returned_qty = returned_qty + ? WHERE id=?")
+        ->execute([(int)$orderReturn['qty'], $orderReturn['order_item_id']]);
+
+    $pdo->prepare("UPDATE order_returns SET received_at=NOW(), received_damaged=? WHERE id=?")
+        ->execute([$damaged ? 1 : 0, $orderReturn['id']]);
+}
+
+// How many units of this order item have been claimed for an exchange but
+// not yet physically received back — "spoken for" even though returned_qty
+// hasn't moved yet. Subtracted from qty-returned_qty wherever "how much of
+// this line is still available" is computed, so the same unit can't be
+// claimed twice while a receipt is pending.
+function pendingExchangeQty(PDO $pdo, int $orderItemId): int {
+    $stmt = $pdo->prepare("SELECT COALESCE(SUM(qty),0) FROM order_returns WHERE order_item_id=? AND is_exchange=1 AND received_at IS NULL");
+    $stmt->execute([$orderItemId]);
+    return (int)$stmt->fetchColumn();
 }
 
 // ── CREATE ORDER ─────────────────────────────────────────────
@@ -207,6 +271,14 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $remarks          = trim($body['remarks']          ?? '');
     $items            = $body['items'] ?? [];
 
+    // Exchange: this new order replaces item(s) claimed from an original
+    // order. The claim itself (reducing the original order's total, marking
+    // the item(s) pending receipt) happens after this new order is created,
+    // inside the same transaction — see below.
+    $exchangeFromOrderId = trim($body['exchange_from_order_id'] ?? '');
+    $returnItemsIn        = $body['return_items'] ?? [];
+    $returnReason         = trim($body['return_reason'] ?? '');
+
     if (!$customer_name) {
         echo json_encode(['success' => false, 'message' => 'Customer name is required.']); exit;
     }
@@ -215,6 +287,39 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     if (empty($items)) {
         echo json_encode(['success' => false, 'message' => 'Order must have at least one item.']); exit;
+    }
+
+    // Validate the exchange claim, if any, before touching anything.
+    $exchangeFromDbId = null;
+    $validatedReturnItems = [];
+    if ($exchangeFromOrderId !== '') {
+        $origStmt = $pdo->prepare("SELECT id, stock_deducted FROM orders WHERE order_id=?");
+        $origStmt->execute([$exchangeFromOrderId]);
+        $origOrder = $origStmt->fetch();
+        if (!$origOrder) { echo json_encode(['success' => false, 'message' => 'Original order not found.']); exit; }
+        if (!$origOrder['stock_deducted']) { echo json_encode(['success' => false, 'message' => 'The original order has not been dispatched yet — nothing to exchange.']); exit; }
+        if (empty($returnItemsIn)) { echo json_encode(['success' => false, 'message' => 'An exchange must include at least one item being returned.']); exit; }
+        $exchangeFromDbId = (int)$origOrder['id'];
+
+        foreach ($returnItemsIn as $ri) {
+            $riItemId = (int)($ri['item_id'] ?? 0);
+            $riQty    = (int)($ri['qty']     ?? 0);
+            if (!$riItemId || $riQty < 1) continue;
+
+            $oiStmt = $pdo->prepare("SELECT * FROM order_items WHERE id=? AND order_id=?");
+            $oiStmt->execute([$riItemId, $exchangeFromDbId]);
+            $oi = $oiStmt->fetch();
+            if (!$oi) { echo json_encode(['success' => false, 'message' => "Return item $riItemId does not belong to the original order."]); exit; }
+
+            $remaining = (int)$oi['qty'] - (int)$oi['returned_qty'] - pendingExchangeQty($pdo, $riItemId);
+            if ($riQty > $remaining) {
+                echo json_encode(['success' => false, 'message' => "Only $remaining unit(s) of \"{$oi['product_name']}\" left to exchange."]); exit;
+            }
+            $validatedReturnItems[] = ['item' => $oi, 'qty' => $riQty];
+        }
+        if (empty($validatedReturnItems)) {
+            echo json_encode(['success' => false, 'message' => 'An exchange must include at least one item being returned.']); exit;
+        }
     }
 
     // Validate and price each item
@@ -300,12 +405,12 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             INSERT INTO orders
                 (order_id, customer_name, customer_phone, customer_email, customer_address, fb_page_id,
                  subtotal, discount, discount_type, extra_charge, shipping_cost, shipping_method, courier_name, total,
-                 payment_method, payment_status, amount_paid, status, remarks, created_by, assigned_to)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'new',?,?,?)
+                 payment_method, payment_status, amount_paid, status, remarks, exchanged_from_order_id, created_by, assigned_to)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'new',?,?,?,?)
         ")->execute([
             $orderId, $customer_name, $customer_phone ?: null, $customer_email ?: null, $customer_address ?: null, $fb_page_id,
             $subtotal, $discountAmount, $discount_type, $extra_charge, $shipping_cost, $shipping_method ?: null, $courier_name ?: null, $total,
-            $payment_method, $payment_status, $amount_paid, $remarks ?: null, $user['id'], $user['id'],
+            $payment_method, $payment_status, $amount_paid, $remarks ?: null, $exchangeFromDbId, $user['id'], $user['id'],
         ]);
         $dbOrderId = $pdo->lastInsertId();
 
@@ -324,6 +429,13 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         // Log initial status
         $pdo->prepare("INSERT INTO order_status_log (order_id,from_status,to_status,changed_by) VALUES (?,NULL,'new',?)")
             ->execute([$dbOrderId, $user['id']]);
+
+        // Exchange: claim the item(s) being given up against the original
+        // order now (reduces its total immediately) — stock/returned_qty for
+        // them stays untouched until physically received on the Exchanges page.
+        foreach ($validatedReturnItems as $vri) {
+            claimExchangeReturn($pdo, $vri['item'], $vri['qty'], $user['id'], $exchangeFromOrderId, $returnReason ?: null, (int)$dbOrderId);
+        }
 
         $pdo->commit();
         echo json_encode(['success' => true, 'order_id' => $orderId]);
@@ -590,12 +702,15 @@ if ($action === 'status' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Stock restores once, at return time. Only the remaining un-returned
         // qty on each line is restored, so this stays correct even if some
-        // items were already partially returned via the per-item Return action.
+        // items were already partially returned via the per-item Return
+        // action — and any qty already claimed by a pending (unreceived)
+        // exchange is left alone here too, so it isn't settled twice once
+        // that exchange is later received on the Exchanges page.
         if ($newStatus === 'returned' && !$order['stock_restored']) {
             $returnItemsStmt = $pdo->prepare("SELECT * FROM order_items WHERE order_id=? AND product_id IS NOT NULL");
             $returnItemsStmt->execute([$order['id']]);
             foreach ($returnItemsStmt->fetchAll() as $ri) {
-                $remaining = (int)$ri['qty'] - (int)$ri['returned_qty'];
+                $remaining = (int)$ri['qty'] - (int)$ri['returned_qty'] - pendingExchangeQty($pdo, (int)$ri['id']);
                 if ($remaining > 0) {
                     returnOrderItem($pdo, $ri, $remaining, $user['id'], $orderId, 'Full order return');
                 }
@@ -634,7 +749,7 @@ if ($action === 'return_item' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$item) { echo json_encode(['success' => false, 'message' => 'Order item not found']); exit; }
     if (!$item['stock_deducted']) { echo json_encode(['success' => false, 'message' => 'This order has not been dispatched yet — nothing to return.']); exit; }
 
-    $remaining = (int)$item['qty'] - (int)$item['returned_qty'];
+    $remaining = (int)$item['qty'] - (int)$item['returned_qty'] - pendingExchangeQty($pdo, $itemId);
     if ($qty > $remaining) { echo json_encode(['success' => false, 'message' => "Only $remaining unit(s) left to return."]); exit; }
 
     $pdo->beginTransaction();
@@ -649,158 +764,68 @@ if ($action === 'return_item' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-// ── EXCHANGE ORDER ITEM (admin + supervisor) ──────────────────
-// Swaps a quantity of one order item for a different product/variant on
-// the same order: the old item is disposed of exactly like a Return
-// (restocked, or logged to Damaged Stock if it came back damaged), the
-// new item's stock is deducted and added as its own line, and the order
-// total is adjusted by the net price difference — not just subtracted.
-if ($action === 'exchange_item' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+// ── EXCHANGE RECEIVE (admin + supervisor) ──────────────────────
+// Confirms a pending exchange claim (see claimExchangeReturn(), called from
+// action=create) is physically back in hand: restocks it, or logs it to
+// Damaged Stock if it came back damaged, and marks it settled.
+if ($action === 'exchange_receive' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$isAdmin && !$isSuper) { echo json_encode(['success' => false, 'message' => 'Unauthorized']); exit; }
 
-    $body           = json_decode(file_get_contents('php://input'), true);
-    $itemId         = (int)($body['item_id']         ?? 0);
-    $qty            = (int)($body['qty']             ?? 0);
-    $reason         = trim($body['reason']           ?? '');
-    $damaged        = !empty($body['damaged']);
-    $newProductId   = (int)($body['new_product_id']  ?? 0);
-    $newVariantId   = (int)($body['new_variant_id']  ?? 0) ?: null;
-    $newQty         = (int)($body['new_qty']         ?? 0) ?: $qty;
-    // Whether the customer already settled the price difference in person
-    // (paid more for an upgrade, or was refunded for a downgrade) — if not,
-    // it's left for the courier to collect/adjust on redelivery.
-    $alreadyPaid    = !empty($body['already_paid']);
-
-    if (!$itemId || $qty < 1 || !$newProductId || $newQty < 1) {
-        echo json_encode(['success' => false, 'message' => 'Invalid data']); exit;
-    }
+    $body     = json_decode(file_get_contents('php://input'), true);
+    $returnId = (int)($body['return_id'] ?? 0);
+    $damaged  = !empty($body['damaged']);
+    if (!$returnId) { echo json_encode(['success' => false, 'message' => 'Invalid data']); exit; }
 
     $stmt = $pdo->prepare("
-        SELECT oi.*, o.order_id AS order_ref, o.stock_deducted,
-               o.status AS order_status, o.payment_status AS order_payment_status,
-               o.amount_paid AS order_amount_paid, o.total AS order_total
-        FROM order_items oi JOIN orders o ON o.id = oi.order_id
-        WHERE oi.id = ?
+        SELECT r.*, oi.product_id, oi.variant_id, o.order_id AS order_ref
+        FROM order_returns r
+        JOIN order_items oi ON oi.id = r.order_item_id
+        JOIN orders o ON o.id = r.order_id
+        WHERE r.id = ? AND r.is_exchange = 1 AND r.received_at IS NULL
     ");
-    $stmt->execute([$itemId]);
-    $item = $stmt->fetch();
-    if (!$item) { echo json_encode(['success' => false, 'message' => 'Order item not found']); exit; }
-    if (!$item['stock_deducted']) { echo json_encode(['success' => false, 'message' => 'This order has not been dispatched yet — nothing to exchange.']); exit; }
-
-    $remaining = (int)$item['qty'] - (int)$item['returned_qty'];
-    if ($qty > $remaining) { echo json_encode(['success' => false, 'message' => "Only $remaining unit(s) left to exchange."]); exit; }
-
-    $newProduct = $pdo->prepare("SELECT id, name, sell_price, buy_price FROM products WHERE id=? AND status='active'");
-    $newProduct->execute([$newProductId]);
-    $newProduct = $newProduct->fetch();
-    if (!$newProduct) { echo json_encode(['success' => false, 'message' => 'Replacement product not found']); exit; }
-
-    $newVariant = null;
-    if ($newVariantId) {
-        $vStmt = $pdo->prepare("SELECT id, label, value, sell_price, buy_price FROM product_variants WHERE id=? AND product_id=?");
-        $vStmt->execute([$newVariantId, $newProductId]);
-        $newVariant = $vStmt->fetch();
-        if (!$newVariant) { $newVariantId = null; }
-    }
-
-    $newSellPrice  = (float)($newVariant ? $newVariant['sell_price'] : $newProduct['sell_price']);
-    $newBuyPrice   = (float)($newVariant ? $newVariant['buy_price']  : $newProduct['buy_price']);
-    $newTotal      = round($newSellPrice * $newQty, 2);
-    $newVariantInfo = $newVariant ? ($newVariant['label'] . ': ' . $newVariant['value']) : null;
+    $stmt->execute([$returnId]);
+    $orderReturn = $stmt->fetch();
+    if (!$orderReturn) { echo json_encode(['success' => false, 'message' => 'Pending exchange not found']); exit; }
 
     $pdo->beginTransaction();
     try {
-        // 1. Dispose of the old item exactly like a Return.
-        $oldReason = $reason ?: "Exchanged for {$newProduct['name']}";
-        returnOrderItem($pdo, $item, $qty, $user['id'], $item['order_ref'], $oldReason, $damaged, true);
-
-        // 2. Deduct stock for the new item.
-        if ($newVariantId) {
-            $pdo->prepare("UPDATE product_variants SET qty_adj = qty_adj - ? WHERE id=?")->execute([$newQty, $newVariantId]);
-            $sumStmt = $pdo->prepare("SELECT COALESCE(SUM(qty_adj),0) FROM product_variants WHERE product_id=?");
-            $sumStmt->execute([$newProductId]);
-            $qtyAfter = (int)$sumStmt->fetchColumn();
-        } else {
-            $qtyAfter = null;
-        }
-        $prodRow = $pdo->prepare("SELECT quantity, min_stock_level FROM products WHERE id=?");
-        $prodRow->execute([$newProductId]);
-        $prodRow  = $prodRow->fetch();
-        $qtyBefore = (int)$prodRow['quantity'];
-        $min       = (int)$prodRow['min_stock_level'];
-        if ($qtyAfter === null) { $qtyAfter = $qtyBefore - $newQty; }
-        $stockStatus = $qtyAfter <= 0 ? 'outofstock' : ($qtyAfter <= 2 ? 'critical' : ($qtyAfter <= $min ? 'lowstock' : 'instock'));
-
-        $pdo->prepare("UPDATE products SET quantity=?, stock_status=? WHERE id=?")->execute([$qtyAfter, $stockStatus, $newProductId]);
-        $pdo->prepare("INSERT INTO stock_adjustments (product_id,type,qty_before,qty_change,qty_after,reference,reason,adjusted_by) VALUES (?,'sale',?,?,?,?,?,?)")
-            ->execute([$newProductId, $qtyBefore, -$newQty, $qtyAfter, $item['order_ref'], "Exchange — replaced with {$newProduct['name']}", $user['id']]);
-
-        // 3. Add the new item as its own line on the same order.
-        $pdo->prepare("
-            INSERT INTO order_items (order_id, product_id, product_name, variant_id, variant_info, qty, sell_price, buy_price, total)
-            VALUES (?,?,?,?,?,?,?,?,?)
-        ")->execute([$item['order_id'], $newProductId, $newProduct['name'], $newVariantId, $newVariantInfo, $newQty, $newSellPrice, $newBuyPrice, $newTotal]);
-
-        // 4. The order total was already reduced by the old item's value inside
-        // returnOrderItem() — now add the new item's value on top, so the net
-        // effect is the price difference either way.
-        $pdo->prepare("UPDATE orders SET subtotal = subtotal + ?, total = total + ? WHERE id=?")
-            ->execute([$newTotal, $newTotal, $item['order_id']]);
-
-        // 5. Reconcile the payment ledger against the new total. If the
-        // customer already settled the difference in person, treat the order
-        // as fully paid now; otherwise leave amount_paid untouched and just
-        // re-derive paid/partial/unpaid so it's accurate again (the price
-        // change can push an already-'paid' order back into 'partial').
-        $totalStmt = $pdo->prepare("SELECT total FROM orders WHERE id=?");
-        $totalStmt->execute([$item['order_id']]);
-        $updatedTotal = (float)$totalStmt->fetchColumn();
-
-        if ($alreadyPaid) {
-            $newAmountPaid    = $updatedTotal;
-            $newPaymentStatus = 'paid';
-        } else {
-            $newAmountPaid = (float)$item['order_amount_paid'];
-            if ($newAmountPaid <= 0) {
-                $newPaymentStatus = 'unpaid';
-            } elseif ($newAmountPaid >= $updatedTotal) {
-                $newPaymentStatus = 'paid';
-            } else {
-                $newPaymentStatus = 'partial';
-            }
-        }
-        $newPaymentMethod = [
-            'unpaid'  => 'Cash on Delivery',
-            'partial' => 'Partial Payment',
-            'paid'    => 'Prepaid',
-        ][$newPaymentStatus];
-
-        // 6. A replacement item always needs its own physical shipment — if
-        // the order had already left the pipeline (or gone all the way to
-        // Delivered), kick it back to Confirmed so staff track the redelivery
-        // through Dispatched → In Courier → Delivered again instead of it
-        // silently staying "Delivered" for an item that hasn't shipped yet.
-        // stock_deducted is left as-is, since the replacement's stock was
-        // already deducted in step 2 — dispatching again won't double-deduct.
-        if (in_array($item['order_status'], ['dispatched', 'in_courier', 'delivered'], true)) {
-            $pdo->prepare("
-                UPDATE orders SET amount_paid=?, payment_status=?, payment_method=?, status='confirmed',
-                       dispatched_at=NULL, delivered_at=NULL, updated_by=?
-                WHERE id=?
-            ")->execute([$newAmountPaid, $newPaymentStatus, $newPaymentMethod, $user['id'], $item['order_id']]);
-
-            $pdo->prepare("INSERT INTO order_status_log (order_id,from_status,to_status,changed_by,note) VALUES (?,?,?,?,?)")
-                ->execute([$item['order_id'], $item['order_status'], 'confirmed', $user['id'], 'Reset for redelivery after exchange']);
-        } else {
-            $pdo->prepare("UPDATE orders SET amount_paid=?, payment_status=?, payment_method=? WHERE id=?")
-                ->execute([$newAmountPaid, $newPaymentStatus, $newPaymentMethod, $item['order_id']]);
-        }
-
+        receiveExchangeReturn($pdo, $orderReturn, $user['id'], $damaged);
         $pdo->commit();
         echo json_encode(['success' => true]);
     } catch (Exception $e) {
         $pdo->rollBack();
-        echo json_encode(['success' => false, 'message' => 'Failed to process exchange.']);
+        echo json_encode(['success' => false, 'message' => 'Failed to confirm receipt.']);
+    }
+    exit;
+}
+
+// ── EXCHANGE CANCEL (admin + supervisor) ───────────────────────
+// Undoes a pending exchange claim before it's been received — e.g. a
+// mis-click, or the customer changes their mind before the replacement
+// ships. Only allowed while still pending; adds the amount back onto the
+// original order and removes the claim.
+if ($action === 'exchange_cancel' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!$isAdmin && !$isSuper) { echo json_encode(['success' => false, 'message' => 'Unauthorized']); exit; }
+
+    $body     = json_decode(file_get_contents('php://input'), true);
+    $returnId = (int)($body['return_id'] ?? 0);
+    if (!$returnId) { echo json_encode(['success' => false, 'message' => 'Invalid data']); exit; }
+
+    $stmt = $pdo->prepare("SELECT * FROM order_returns WHERE id=? AND is_exchange=1 AND received_at IS NULL");
+    $stmt->execute([$returnId]);
+    $orderReturn = $stmt->fetch();
+    if (!$orderReturn) { echo json_encode(['success' => false, 'message' => 'Pending exchange not found']); exit; }
+
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare("UPDATE orders SET subtotal = subtotal + ?, total = total + ? WHERE id=?")
+            ->execute([$orderReturn['amount'], $orderReturn['amount'], $orderReturn['order_id']]);
+        $pdo->prepare("DELETE FROM order_returns WHERE id=?")->execute([$returnId]);
+        $pdo->commit();
+        echo json_encode(['success' => true]);
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        echo json_encode(['success' => false, 'message' => 'Failed to cancel exchange.']);
     }
     exit;
 }
@@ -924,6 +949,15 @@ if ($action === 'delete_order' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $order = $stmt->fetch();
     if (!$order) { echo json_encode(['success' => false, 'message' => 'Order not found.']); exit; }
 
+    // Deleting would cascade away the pending claim while the replacement
+    // order (with the customer's new item) still exists — orphaning the
+    // physical item with nothing left to reconcile it against.
+    $pendingStmt = $pdo->prepare("SELECT 1 FROM order_returns WHERE order_id=? AND is_exchange=1 AND received_at IS NULL LIMIT 1");
+    $pendingStmt->execute([$order['id']]);
+    if ($pendingStmt->fetch()) {
+        echo json_encode(['success' => false, 'message' => 'This order has a pending exchange claim awaiting receipt — resolve it on the Exchanges page first.']); exit;
+    }
+
     $pdo->beginTransaction();
     try {
         if ($order['stock_deducted']) {
@@ -955,6 +989,10 @@ if ($action === 'bulk_delete_orders' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute([$oid]);
             $order = $stmt->fetch();
             if (!$order) continue;
+
+            $pendingStmt = $pdo->prepare("SELECT 1 FROM order_returns WHERE order_id=? AND is_exchange=1 AND received_at IS NULL LIMIT 1");
+            $pendingStmt->execute([$order['id']]);
+            if ($pendingStmt->fetch()) continue;
 
             if ($order['stock_deducted']) {
                 adjustOrderStock($pdo, $order['id'], 'return', 1, $user['id'], "Order {$order['order_id']} deleted — stock restored");
