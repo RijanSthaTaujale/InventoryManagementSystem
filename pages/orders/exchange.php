@@ -13,7 +13,9 @@ $currency   = 'Rs';
 $page    = max(1, (int)($_GET['page'] ?? 1));
 $perPage = 20;
 
-$total = (int)$pdo->query("SELECT COUNT(*) FROM order_returns WHERE is_exchange=1 AND received_at IS NULL")->fetchColumn();
+// The list shows full history, not just what's pending — settled rows stay
+// visible (marked Received/Damaged) rather than disappearing once actioned.
+$total = (int)$pdo->query("SELECT COUNT(*) FROM order_returns WHERE is_exchange=1")->fetchColumn();
 $totalPages = max(1, ceil($total / $perPage));
 $page       = min($page, $totalPages);
 $offset     = ($page - 1) * $perPage;
@@ -28,14 +30,15 @@ $stmt = $pdo->prepare("
     JOIN orders o ON o.id = r.order_id
     LEFT JOIN orders n ON n.id = r.new_order_id
     LEFT JOIN users u ON u.id = r.returned_by
-    WHERE r.is_exchange = 1 AND r.received_at IS NULL
-    ORDER BY r.created_at ASC
+    WHERE r.is_exchange = 1
+    ORDER BY (r.received_at IS NULL) DESC, r.created_at DESC
     LIMIT $perPage OFFSET $offset
 ");
 $stmt->execute();
 $rows = $stmt->fetchAll();
 
-$totalUnits = (int)$pdo->query("SELECT COALESCE(SUM(qty),0) FROM order_returns WHERE is_exchange=1 AND received_at IS NULL")->fetchColumn();
+$pendingCount = (int)$pdo->query("SELECT COUNT(*) FROM order_returns WHERE is_exchange=1 AND received_at IS NULL")->fetchColumn();
+$pendingUnits = (int)$pdo->query("SELECT COALESCE(SUM(qty),0) FROM order_returns WHERE is_exchange=1 AND received_at IS NULL")->fetchColumn();
 
 $baseUrl = APP_URL . '/pages/orders/exchange.php';
 
@@ -56,9 +59,9 @@ include __DIR__ . '/../../components/head.php';
             <span style="color:var(--text-muted);font-size:.82rem">/</span>
             <span style="font-size:.82rem">Exchanges</span>
           </div>
-          <h1 style="font-size:1.25rem;font-weight:700">Exchanges Awaiting Receipt</h1>
+          <h1 style="font-size:1.25rem;font-weight:700">Exchanges</h1>
           <p style="font-size:.82rem;color:var(--text-secondary);margin-top:2px">
-            <?= number_format($total) ?> pending · <?= number_format($totalUnits) ?> units
+            <?= number_format($pendingCount) ?> pending · <?= number_format($pendingUnits) ?> units awaiting receipt
           </p>
         </div>
       </div>
@@ -72,14 +75,15 @@ include __DIR__ . '/../../components/head.php';
               <th>Qty &amp; Amount</th>
               <th>Requested By</th>
               <th>Replacement Order</th>
+              <th style="width:110px">Status</th>
               <th style="width:260px">Actions</th>
             </tr>
           </thead>
           <tbody>
             <?php if (empty($rows)): ?>
-            <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted)">No exchanges awaiting receipt</td></tr>
+            <tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text-muted)">No exchanges yet</td></tr>
             <?php endif; ?>
-            <?php foreach ($rows as $r): ?>
+            <?php foreach ($rows as $r): $isPending = $r['received_at'] === null; ?>
             <tr>
               <td>
                 <a href="<?= APP_URL ?>/pages/orders/view.php?id=<?= urlencode($r['original_order_id']) ?>" style="font-weight:700;color:var(--primary);font-size:.82rem"><?= e($r['original_order_id']) ?></a>
@@ -110,11 +114,24 @@ include __DIR__ . '/../../components/head.php';
                 <?php endif; ?>
               </td>
               <td>
+                <?php if ($isPending): ?>
+                <span class="badge" style="background:#fef3c7;color:#92400e">Pending</span>
+                <?php elseif ($r['received_damaged']): ?>
+                <span class="badge" style="background:#fee2e2;color:#b91c1c">Damaged</span>
+                <?php else: ?>
+                <span class="badge" style="background:#dcfce7;color:#166534">Received</span>
+                <?php endif; ?>
+              </td>
+              <td>
+                <?php if ($isPending): ?>
                 <div style="display:flex;gap:5px;flex-wrap:wrap">
                   <button class="btn btn-primary btn-xs" onclick="confirmReceived(<?= (int)$r['id'] ?>, false)">Confirm Received</button>
                   <button class="btn btn-outline btn-xs" style="color:#dc2626;border-color:#fca5a5" onclick="confirmReceived(<?= (int)$r['id'] ?>, true)">Mark Damaged</button>
                   <button class="btn btn-outline btn-xs" onclick="cancelExchange(<?= (int)$r['id'] ?>)">Cancel</button>
                 </div>
+                <?php else: ?>
+                <div style="font-size:.78rem;color:var(--text-muted)"><?= e($r['received_damaged'] ? 'Damaged' : 'Received') ?> <?= date('d M Y, h:i A', strtotime($r['received_at'])) ?></div>
+                <?php endif; ?>
               </td>
             </tr>
             <?php endforeach; ?>

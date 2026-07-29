@@ -182,6 +182,14 @@ function settleReturnedUnit(PDO $pdo, int $productId, ?int $variantId, int $qty,
 // matter which path triggers the rest of it. NOT used by Exchange anymore —
 // see claimExchangeReturn()/receiveExchangeReturn() below, which defer the
 // stock/returned_qty half until physical receipt is confirmed.
+// Once a return/exchange claim drops an order's subtotal to 0, there's no
+// product left in it — any leftover total would only be coming from
+// shipping/extra charge, which shouldn't still be owed for a delivery that
+// no longer has anything in it. Zero the total outright in that case.
+function zeroOutIfNoProductLeft(PDO $pdo, int $orderDbId): void {
+    $pdo->prepare("UPDATE orders SET total=0 WHERE id=? AND subtotal<=0")->execute([$orderDbId]);
+}
+
 function returnOrderItem(PDO $pdo, array $item, int $qty, int $userId, string $orderRef, ?string $reason, bool $damaged = false): float {
     $productId = (int)($item['product_id'] ?? 0);
     $variantId = $item['variant_id'] !== null ? (int)$item['variant_id'] : null;
@@ -193,6 +201,7 @@ function returnOrderItem(PDO $pdo, array $item, int $qty, int $userId, string $o
     $amount = round($qty * (float)$item['sell_price'], 2);
     $pdo->prepare("UPDATE orders SET subtotal = GREATEST(0, subtotal - ?), total = GREATEST(0, total - ?) WHERE id=?")
         ->execute([$amount, $amount, $item['order_id']]);
+    zeroOutIfNoProductLeft($pdo, (int)$item['order_id']);
 
     $pdo->prepare("INSERT INTO order_returns (order_id,order_item_id,qty,amount,damaged,is_exchange,reason,returned_by,received_at) VALUES (?,?,?,?,?,0,?,?,NOW())")
         ->execute([$item['order_id'], $item['id'], $qty, $amount, $damaged ? 1 : 0, $reason, $userId]);
@@ -210,6 +219,7 @@ function claimExchangeReturn(PDO $pdo, array $item, int $qty, int $userId, strin
     $amount = round($qty * (float)$item['sell_price'], 2);
     $pdo->prepare("UPDATE orders SET subtotal = GREATEST(0, subtotal - ?), total = GREATEST(0, total - ?) WHERE id=?")
         ->execute([$amount, $amount, $item['order_id']]);
+    zeroOutIfNoProductLeft($pdo, (int)$item['order_id']);
 
     $pdo->prepare("INSERT INTO order_returns (order_id,order_item_id,qty,amount,damaged,is_exchange,reason,returned_by,new_order_id) VALUES (?,?,?,?,0,1,?,?,?)")
         ->execute([$item['order_id'], $item['id'], $qty, $amount, $reason, $userId, $newOrderId]);
@@ -293,7 +303,7 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $exchangeFromDbId = null;
     $validatedReturnItems = [];
     if ($exchangeFromOrderId !== '') {
-        $origStmt = $pdo->prepare("SELECT id, stock_deducted FROM orders WHERE order_id=?");
+        $origStmt = $pdo->prepare("SELECT id, status, stock_deducted FROM orders WHERE order_id=?");
         $origStmt->execute([$exchangeFromOrderId]);
         $origOrder = $origStmt->fetch();
         if (!$origOrder) { echo json_encode(['success' => false, 'message' => 'Original order not found.']); exit; }
@@ -433,8 +443,28 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         // Exchange: claim the item(s) being given up against the original
         // order now (reduces its total immediately) — stock/returned_qty for
         // them stays untouched until physically received on the Exchanges page.
-        foreach ($validatedReturnItems as $vri) {
-            claimExchangeReturn($pdo, $vri['item'], $vri['qty'], $user['id'], $exchangeFromOrderId, $returnReason ?: null, (int)$dbOrderId);
+        if (!empty($validatedReturnItems)) {
+            foreach ($validatedReturnItems as $vri) {
+                claimExchangeReturn($pdo, $vri['item'], $vri['qty'], $user['id'], $exchangeFromOrderId, $returnReason ?: null, (int)$dbOrderId);
+            }
+
+            // The original order's own delivery leg is done once it's been
+            // exchanged — whatever was kept was delivered, whatever wasn't is
+            // now tracked on the new order instead. Mark it Delivered so it
+            // stops showing as still in transit, and auto-settle its payment
+            // the same way a normal delivery does so the courier is never
+            // asked to collect on it again.
+            if ($origOrder['status'] !== 'delivered') {
+                $pdo->prepare("
+                    UPDATE orders SET status='delivered', delivered_at=COALESCE(delivered_at, NOW()), updated_by=?,
+                           amount_paid=IF(payment_status IN ('unpaid','partial'),total,amount_paid),
+                           payment_status=IF(payment_status IN ('unpaid','partial'),'paid',payment_status)
+                    WHERE id=?
+                ")->execute([$user['id'], $exchangeFromDbId]);
+
+                $pdo->prepare("INSERT INTO order_status_log (order_id,from_status,to_status,changed_by,note) VALUES (?,?,'delivered',?,?)")
+                    ->execute([$exchangeFromDbId, $origOrder['status'], $user['id'], "Marked delivered — exchanged for {$orderId}"]);
+            }
         }
 
         $pdo->commit();
