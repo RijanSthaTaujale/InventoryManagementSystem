@@ -369,12 +369,8 @@ include __DIR__ . '/../../components/head.php';
                 $rowAmountDue = max(0, (float)$o['total'] - (float)$o['amount_paid']);
               ?>
               <td style="font-weight:600">
-                <?php if ($o['amount_paid'] > 0): ?>
                 <div><?= $currency ?> <?= number_format($rowAmountDue,0) ?></div>
-                <div style="font-size:.68rem;font-weight:700;color:#22c55e;margin-top:2px">&#10003; <?= $currency ?> <?= number_format($o['total'],0) ?> paid</div>
-                <?php else: ?>
-                <?= $currency ?> <?= number_format($o['total'],0) ?>
-                <?php endif; ?>
+                <div style="font-size:.68rem;font-weight:500;color:var(--text-muted);margin-top:2px"><?= $currency ?> <?= number_format($o['total'],0) ?> order value</div>
               </td>
               <?php endif; ?>
               <td>
