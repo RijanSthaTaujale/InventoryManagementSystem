@@ -62,13 +62,21 @@ if ($action === 'remove_blacklist' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 // line items, recalculates stock_status, and logs one stock_adjustments row
 // per item. direction: -1 to deduct (dispatch), +1 to restore (return).
 function adjustOrderStock(PDO $pdo, int $orderDbId, string $adjType, int $direction, int $userId, string $reason): void {
-    $items = $pdo->prepare("SELECT product_id, variant_id, qty FROM order_items WHERE order_id=? AND product_id IS NOT NULL");
+    $items = $pdo->prepare("SELECT product_id, variant_id, qty, returned_qty FROM order_items WHERE order_id=? AND product_id IS NOT NULL");
     $items->execute([$orderDbId]);
 
     foreach ($items->fetchAll() as $item) {
+        // Only the still-outstanding quantity — qty minus whatever was already
+        // given back via a per-item Return, an Exchange, or the whole-order
+        // Returned status — is actually still deducted from stock. Using the
+        // raw line qty here double-restores (and even un-writes-off damaged
+        // units) when this order is later deleted after any of those.
+        $remainingQty = (int)$item['qty'] - (int)$item['returned_qty'];
+        if ($remainingQty <= 0) continue;
+
         $productId = (int)$item['product_id'];
         $variantId = $item['variant_id'] !== null ? (int)$item['variant_id'] : null;
-        $qtyChange = $direction * (int)$item['qty'];
+        $qtyChange = $direction * $remainingQty;
 
         // If the line item is tied to a specific variant, deduct/restore that
         // variant's own stock first, then re-derive the product total as the
