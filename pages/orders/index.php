@@ -392,10 +392,20 @@ include __DIR__ . '/../../components/head.php';
                 <div><?= $currency ?> <?= number_format($rowAmountDue,0) ?></div>
                 <div style="font-size:.68rem;font-weight:500;color:var(--text-muted);margin-top:2px"><?= $currency ?> <?= number_format($o['total'],0) ?></div>
                 <?php if ($o['amount_paid'] > 0):
-                  $isExchangeCredit = $o['payment_method'] === 'Exchange Credit';
+                  // payment_method already tells us *why* amount_paid is what
+                  // it is — surface that instead of a generic "paid" so it's
+                  // clear whether this was prepaid, only partially prepaid,
+                  // collected by the courier on delivery, or carried over
+                  // from an exchange.
+                  $paidReason = match ($o['payment_method']) {
+                      'Prepaid'         => ['&#10003;', '#22c55e', 'prepaid'],
+                      'Partial Payment' => ['&#10003;', '#22c55e', 'partially prepaid'],
+                      'Exchange Credit' => ['&#8644;', '#6d28d9', 'credited from exchange'],
+                      default           => ['&#10003;', '#22c55e', 'collected on delivery'],
+                  };
                 ?>
-                <div style="font-size:.66rem;font-weight:600;color:<?= $isExchangeCredit ? '#6d28d9' : '#22c55e' ?>;margin-top:1px">
-                  <?= $isExchangeCredit ? '&#8644;' : '&#10003;' ?> <?= $currency ?> <?= number_format($o['amount_paid'],0) ?> <?= $isExchangeCredit ? 'credited from exchange' : 'paid' ?>
+                <div style="font-size:.66rem;font-weight:600;color:<?= $paidReason[1] ?>;margin-top:1px">
+                  <?= $paidReason[0] ?> <?= $currency ?> <?= number_format($o['amount_paid'],0) ?> <?= $paidReason[2] ?>
                 </div>
                 <?php endif; ?>
               </td>

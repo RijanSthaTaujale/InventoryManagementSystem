@@ -202,13 +202,11 @@ include __DIR__ . '/../../components/head.php';
                     <th style="width:110px">Unit Price</th>
                     <th style="width:110px">Total</th>
                     <?php if ($isAdmin): ?><th style="width:100px">Buy Price</th><?php endif; ?>
-                    <?php if (($isAdmin || $isSuper) && $order['stock_deducted']): ?><th style="width:150px"></th><?php endif; ?>
                   </tr>
                 </thead>
                 <tbody>
                   <?php foreach ($items as $item):
-                    $pendingQty   = (int)($pendingByItem[$item['id']] ?? 0);
-                    $remainingQty = (int)$item['qty'] - (int)$item['returned_qty'] - $pendingQty;
+                    $pendingQty = (int)($pendingByItem[$item['id']] ?? 0);
                   ?>
                   <tr>
                     <td>
@@ -246,16 +244,6 @@ include __DIR__ . '/../../components/head.php';
                     <td style="font-weight:600"><?= $currency ?> <?= number_format($item['total'], 0) ?></td>
                     <?php if ($isAdmin): ?>
                     <td class="text-muted"><?= $currency ?> <?= number_format($item['buy_price'], 0) ?></td>
-                    <?php endif; ?>
-                    <?php if (($isAdmin || $isSuper) && $order['stock_deducted']): ?>
-                    <td>
-                      <?php if ($remainingQty > 0): ?>
-                      <div style="display:flex;gap:5px">
-                        <button class="btn btn-outline btn-xs"
-                                onclick="openReturnModal(<?= (int)$item['id'] ?>, <?= htmlspecialchars(json_encode($item['product_name']), ENT_QUOTES) ?>, <?= $remainingQty ?>)">Return</button>
-                      </div>
-                      <?php endif; ?>
-                    </td>
                     <?php endif; ?>
                   </tr>
                   <?php endforeach; ?>
@@ -466,34 +454,6 @@ include __DIR__ . '/../../components/head.php';
   </div>
 </div>
 
-<!-- Return item modal -->
-<div id="returnModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center">
-  <div style="background:#fff;border-radius:var(--radius-xl);padding:28px;max-width:380px;width:90%;box-shadow:var(--shadow-md)">
-    <div style="font-size:1.05rem;font-weight:700;margin-bottom:4px">Return Item</div>
-    <div style="font-size:.84rem;color:var(--text-secondary);margin-bottom:18px" id="returnItemName"></div>
-    <div style="display:flex;flex-direction:column;gap:14px">
-      <div class="form-group">
-        <label class="form-label" id="returnQtyLabel">Quantity to Return</label>
-        <input type="number" id="returnQty" class="form-control" min="1" value="1">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Reason</label>
-        <input type="text" id="returnReason" class="form-control" placeholder="e.g. Customer kept only 1 of 2 items">
-      </div>
-      <div class="form-group" style="display:flex;align-items:center;gap:8px">
-        <input type="checkbox" id="returnDamaged" style="width:16px;height:16px">
-        <label for="returnDamaged" style="font-size:.85rem;color:var(--text-secondary);margin:0;cursor:pointer">
-          Item came back damaged — log to Damaged Stock instead of restocking
-        </label>
-      </div>
-    </div>
-    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
-      <button class="btn btn-outline btn-sm" onclick="document.getElementById('returnModal').style.display='none'">Cancel</button>
-      <button class="btn btn-primary btn-sm" onclick="submitReturn()">Confirm Return</button>
-    </div>
-  </div>
-</div>
-
 <div class="toast-container" id="toastContainer"></div>
 
 <script>
@@ -538,36 +498,5 @@ function changeStatus(newStatus) {
   });
 }
 
-<?php if ($isAdmin || $isSuper): ?>
-let returnItemId = null;
-
-function openReturnModal(itemId, name, maxQty) {
-  returnItemId = itemId;
-  document.getElementById('returnItemName').textContent = name;
-  document.getElementById('returnQtyLabel').textContent = `Quantity to Return (max ${maxQty})`;
-  document.getElementById('returnQty').max = maxQty;
-  document.getElementById('returnQty').value = maxQty;
-  document.getElementById('returnReason').value = '';
-  document.getElementById('returnDamaged').checked = false;
-  document.getElementById('returnModal').style.display = 'flex';
-}
-
-async function submitReturn() {
-  const qty     = parseInt(document.getElementById('returnQty').value) || 0;
-  const reason  = document.getElementById('returnReason').value.trim();
-  const damaged = document.getElementById('returnDamaged').checked;
-  if (qty < 1) { showToast('Enter a valid quantity', 'error'); return; }
-
-  const r = await fetch(`${APP_URL}/api/orders.php?action=return_item`, {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ item_id: returnItemId, qty, reason, damaged })
-  });
-  const d = await r.json();
-  document.getElementById('returnModal').style.display = 'none';
-  if (d.success) { showToast('Return processed', 'success'); setTimeout(() => location.reload(), 700); }
-  else showToast(d.message || 'Failed', 'error');
-}
-
-<?php endif; ?>
 </script>
 <?php include __DIR__ . '/../../components/foot.php'; ?>

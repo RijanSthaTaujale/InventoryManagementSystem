@@ -830,43 +830,6 @@ if ($action === 'status' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-// ── RETURN ORDER ITEM (partial or full line, admin + supervisor) ──
-if ($action === 'return_item' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!$isAdmin && !$isSuper) { echo json_encode(['success' => false, 'message' => 'Unauthorized']); exit; }
-
-    $body    = json_decode(file_get_contents('php://input'), true);
-    $itemId  = (int)($body['item_id'] ?? 0);
-    $qty     = (int)($body['qty']     ?? 0);
-    $reason  = trim($body['reason']   ?? '');
-    $damaged = !empty($body['damaged']);
-
-    if (!$itemId || $qty < 1) { echo json_encode(['success' => false, 'message' => 'Invalid data']); exit; }
-
-    $stmt = $pdo->prepare("
-        SELECT oi.*, o.order_id AS order_ref, o.stock_deducted
-        FROM order_items oi JOIN orders o ON o.id = oi.order_id
-        WHERE oi.id = ?
-    ");
-    $stmt->execute([$itemId]);
-    $item = $stmt->fetch();
-    if (!$item) { echo json_encode(['success' => false, 'message' => 'Order item not found']); exit; }
-    if (!$item['stock_deducted']) { echo json_encode(['success' => false, 'message' => 'This order has not been dispatched yet — nothing to return.']); exit; }
-
-    $remaining = (int)$item['qty'] - (int)$item['returned_qty'] - pendingExchangeQty($pdo, $itemId);
-    if ($qty > $remaining) { echo json_encode(['success' => false, 'message' => "Only $remaining unit(s) left to return."]); exit; }
-
-    $pdo->beginTransaction();
-    try {
-        $amount = returnOrderItem($pdo, $item, $qty, $user['id'], $item['order_ref'], $reason ?: null, $damaged);
-        $pdo->commit();
-        echo json_encode(['success' => true, 'amount' => $amount]);
-    } catch (Exception $e) {
-        $pdo->rollBack();
-        echo json_encode(['success' => false, 'message' => 'Failed to process return.']);
-    }
-    exit;
-}
-
 // ── EXCHANGE RECEIVE (admin + supervisor) ──────────────────────
 // Confirms a pending exchange claim (see claimExchangeReturn(), called from
 // action=create) is physically back in hand: restocks it, or logs it to
