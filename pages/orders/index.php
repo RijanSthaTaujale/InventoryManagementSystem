@@ -396,8 +396,10 @@ include __DIR__ . '/../../components/head.php';
                   // handled differently on the ground (driver pickup / customer
                   // walk-in, not a normal courier drop) — flagged yellow so
                   // staff can spot them at a glance while scanning the list.
-                  $isIndrive     = $o['courier_name'] === 'Indrive';
-                  $isStorePickup = $o['shipping_method'] === 'Store Pickup';
+                  // Matched loosely (case-insensitive, trimmed) since the exact
+                  // casing/spacing of these admin-entered names can vary.
+                  $isIndrive     = strtolower(trim($o['courier_name'] ?? ''))     === 'indrive';
+                  $isStorePickup = strtolower(trim($o['shipping_method'] ?? '')) === 'store pickup';
                 ?>
                 <?php if ($isIndrive || $isStorePickup): ?>
                 <div style="font-size:.68rem;font-weight:700;color:#854d0e;background:#fef9c3;display:inline-block;padding:2px 6px;border-radius:4px;margin-top:4px">
