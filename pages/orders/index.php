@@ -392,14 +392,15 @@ include __DIR__ . '/../../components/head.php';
                 <div style="font-size:.7rem;color:var(--text-muted);margin-top:3px">Page: <?= e($o['page_name']) ?></div>
                 <?php endif; ?>
                 <?php
-                  // Indrive (courier) and Store Pickup (shipping method) are
-                  // handled differently on the ground (driver pickup / customer
-                  // walk-in, not a normal courier drop) — flagged yellow so
-                  // staff can spot them at a glance while scanning the list.
+                  // Indrive and Store Pickup are both Shipping Method options
+                  // (not couriers) — handled differently on the ground (driver
+                  // pickup / customer walk-in, not a normal courier drop), so
+                  // flagged yellow to stand out while scanning the list.
                   // Matched loosely (case-insensitive, trimmed) since the exact
                   // casing/spacing of these admin-entered names can vary.
-                  $isIndrive     = strtolower(trim($o['courier_name'] ?? ''))     === 'indrive';
-                  $isStorePickup = strtolower(trim($o['shipping_method'] ?? '')) === 'store pickup';
+                  $shippingMethodNorm = strtolower(trim($o['shipping_method'] ?? ''));
+                  $isIndrive     = $shippingMethodNorm === 'indrive';
+                  $isStorePickup = $shippingMethodNorm === 'store pickup';
                 ?>
                 <?php if ($isIndrive || $isStorePickup): ?>
                 <div style="font-size:.68rem;font-weight:700;color:#854d0e;background:#fef9c3;display:inline-block;padding:2px 6px;border-radius:4px;margin-top:4px">
