@@ -79,31 +79,42 @@ $orders = $stmt->fetchAll();
 // Blacklist lookup (small table — load whole set once)
 $blacklistSet = array_flip($pdo->query("SELECT phone FROM customer_blacklist")->fetchAll(PDO::FETCH_COLUMN));
 
-// Duplicate detection: same phone + same day appearing more than once,
-// scoped to phones present on this page for efficiency.
+// Duplicate detection: same phone + same page + same day appearing more than
+// once, scoped to phones present on this page for efficiency. Same phone but
+// a different page (e.g. a customer ordering from two different FB pages the
+// same day) is not a duplicate.
 $pagePhones = array_values(array_unique(array_filter(array_column($orders, 'customer_phone'))));
 $duplicateKeys = [];
 if ($pagePhones) {
     $placeholders = implode(',', array_fill(0, count($pagePhones), '?'));
     $dupStmt = $pdo->prepare("
-        SELECT customer_phone, DATE(created_at) AS d, COUNT(*) AS c
+        SELECT customer_phone, fb_page_id, DATE(created_at) AS d, COUNT(*) AS c
         FROM orders WHERE customer_phone IN ($placeholders)
-        GROUP BY customer_phone, DATE(created_at) HAVING c > 1
+        GROUP BY customer_phone, fb_page_id, DATE(created_at) HAVING c > 1
     ");
     $dupStmt->execute($pagePhones);
     foreach ($dupStmt->fetchAll() as $row) {
-        $duplicateKeys[$row['customer_phone'] . '|' . $row['d']] = true;
+        $duplicateKeys[$row['customer_phone'] . '|' . $row['fb_page_id'] . '|' . $row['d']] = true;
     }
 }
 
 // Recurring customer: same phone has more than one order all-time (not just
 // today) — shows on every one of that phone's orders, same scoping approach
-// as the duplicate check above.
+// as the duplicate check above. Orders that are themselves part of a same-day
+// duplicate cluster (see above) don't count toward this — those are repeat
+// same-day submissions, not evidence of a returning customer.
 $recurringCounts = [];
 if ($pagePhones) {
     $recStmt = $pdo->prepare("
         SELECT customer_phone, COUNT(*) AS c
-        FROM orders WHERE customer_phone IN ($placeholders)
+        FROM orders o
+        WHERE customer_phone IN ($placeholders)
+          AND (
+            SELECT COUNT(*) FROM orders o2
+            WHERE o2.customer_phone = o.customer_phone
+              AND o2.fb_page_id <=> o.fb_page_id
+              AND DATE(o2.created_at) = DATE(o.created_at)
+          ) = 1
         GROUP BY customer_phone HAVING c > 1
     ");
     $recStmt->execute($pagePhones);
@@ -343,7 +354,7 @@ include __DIR__ . '/../../components/head.php';
 
               $isBlacklisted = $o['customer_phone'] && isset($blacklistSet[$o['customer_phone']]);
               $rowDate       = date('Y-m-d', strtotime($o['created_at']));
-              $isDuplicate   = $o['customer_phone'] && isset($duplicateKeys[$o['customer_phone'] . '|' . $rowDate]);
+              $isDuplicate   = $o['customer_phone'] && isset($duplicateKeys[$o['customer_phone'] . '|' . $o['fb_page_id'] . '|' . $rowDate]);
               $recurringCount = $o['customer_phone'] ? ($recurringCounts[$o['customer_phone']] ?? 0) : 0;
               $isExchanged   = isset($exchangedOrderIds[$o['id']]);
               $isReturned    = isset($returnedOrderIds[$o['id']]);
