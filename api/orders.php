@@ -188,12 +188,16 @@ function settleReturnedUnit(PDO $pdo, int $productId, ?int $variantId, int $qty,
 // already made the trip, so that charge is still legitimately owed even
 // though every product line got returned/exchanged afterward. But if the
 // return happens before delivery ever completed (rejected straight off the
-// courier), no delivery actually happened — waive it, so the total goes to 0.
+// courier), the courier company never charges us for that trip either — so
+// shipping_cost itself is zeroed too, not just the customer-facing total.
+// Without that, revenue queries that independently compute total-shipping_cost
+// (e.g. Dashboard's Dispatched By Day) would go negative, subtracting a
+// shipping charge that was never actually incurred.
 function zeroOutIfNoProductLeft(PDO $pdo, int $orderDbId, bool $wasDelivered): void {
     if ($wasDelivered) {
         $pdo->prepare("UPDATE orders SET total = GREATEST(0, extra_charge + shipping_cost - discount) WHERE id=? AND subtotal<=0")->execute([$orderDbId]);
     } else {
-        $pdo->prepare("UPDATE orders SET total=0 WHERE id=? AND subtotal<=0")->execute([$orderDbId]);
+        $pdo->prepare("UPDATE orders SET total=0, shipping_cost=0 WHERE id=? AND subtotal<=0")->execute([$orderDbId]);
     }
 }
 
