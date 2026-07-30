@@ -149,7 +149,7 @@ include __DIR__ . '/../../components/head.php';
           </thead>
           <tbody>
             <?php if (empty($rows)): ?>
-            <tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text-muted)">No exchanges yet</td></tr>
+            <tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text-muted)">No returns yet</td></tr>
             <?php endif; ?>
             <?php foreach ($rows as $r): $isPending = $r['received_at'] === null; ?>
             <tr>
@@ -195,7 +195,7 @@ include __DIR__ . '/../../components/head.php';
                 <div style="display:flex;gap:5px;flex-wrap:wrap">
                   <button class="btn btn-primary btn-xs" onclick="confirmReceived(<?= (int)$r['id'] ?>, false)">Confirm Received</button>
                   <button class="btn btn-outline btn-xs" style="color:#dc2626;border-color:#fca5a5" onclick="confirmReceived(<?= (int)$r['id'] ?>, true)">Mark Damaged</button>
-                  <button class="btn btn-outline btn-xs" onclick="cancelExchange(<?= (int)$r['id'] ?>)">Cancel</button>
+                  <button class="btn btn-outline btn-xs" onclick="cancelExchange(<?= (int)$r['id'] ?>, <?= $r['new_order_id_str'] ? 'true' : 'false' ?>)">Cancel</button>
                 </div>
                 <?php else: ?>
                 <div style="font-size:.78rem;color:var(--text-muted)"><?= e($r['received_damaged'] ? 'Damaged' : 'Received') ?> <?= date('d M Y, h:i A', strtotime($r['received_at'])) ?></div>
@@ -233,15 +233,16 @@ async function confirmReceived(returnId, damaged) {
   else showToast(d.message || 'Failed', 'error');
 }
 
-async function cancelExchange(returnId) {
-  if (!confirm('Cancel this pending exchange? The amount will be added back to the original order.')) return;
+async function cancelExchange(returnId, isExchange) {
+  const label = isExchange ? 'exchange' : 'return';
+  if (!confirm(`Cancel this pending ${label}? The amount will be added back to the original order.`)) return;
 
   const r = await fetch(`${APP_URL}/api/orders.php?action=exchange_cancel`, {
     method: 'POST', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({ return_id: returnId })
   });
   const d = await r.json();
-  if (d.success) { showToast('Exchange cancelled', 'success'); setTimeout(() => location.reload(), 700); }
+  if (d.success) { showToast(`${isExchange ? 'Exchange' : 'Return'} cancelled`, 'success'); setTimeout(() => location.reload(), 700); }
   else showToast(d.message || 'Failed', 'error');
 }
 </script>

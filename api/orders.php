@@ -1026,7 +1026,7 @@ if ($action === 'delete_order' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $pendingStmt = $pdo->prepare("SELECT 1 FROM order_returns WHERE order_id=? AND is_exchange=1 AND received_at IS NULL LIMIT 1");
     $pendingStmt->execute([$order['id']]);
     if ($pendingStmt->fetch()) {
-        echo json_encode(['success' => false, 'message' => 'This order has a pending exchange claim awaiting receipt — resolve it on the Returns page first.']); exit;
+        echo json_encode(['success' => false, 'message' => 'This order has a pending return or exchange claim awaiting receipt — resolve it on the Returns page first.']); exit;
     }
 
     $pdo->beginTransaction();

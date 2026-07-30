@@ -58,6 +58,13 @@ $pendingByItem = $pdo->prepare("SELECT order_item_id, SUM(qty) AS qty FROM order
 $pendingByItem->execute([$order['id']]);
 $pendingByItem = array_column($pendingByItem->fetchAll(), 'qty', 'order_item_id');
 
+// Which of those pending claims are a real Exchange (replacement order
+// exists) vs a plain Return, so the "pending receipt" note reads correctly
+// instead of always saying "exchange" for a pending Return too.
+$pendingExchangeItemIds = $pdo->prepare("SELECT DISTINCT order_item_id FROM order_returns WHERE order_id=? AND received_at IS NULL AND new_order_id IS NOT NULL");
+$pendingExchangeItemIds->execute([$order['id']]);
+$pendingExchangeItemIds = array_flip($pendingExchangeItemIds->fetchAll(PDO::FETCH_COLUMN));
+
 $hasExchangeableItem = false;
 foreach ($items as $it) {
     if ((int)$it['qty'] - (int)$it['returned_qty'] - (int)($pendingByItem[$it['id']] ?? 0) > 0) {
@@ -233,7 +240,7 @@ include __DIR__ . '/../../components/head.php';
                           <?php endif; ?>
                           <?php if ($pendingQty > 0): ?>
                           <div style="font-size:.68rem;font-weight:700;color:#d97706;margin-top:2px">
-                            &#8987; <?= $pendingQty ?> unit<?= $pendingQty!=1?'s':'' ?> pending exchange receipt
+                            &#8987; <?= $pendingQty ?> unit<?= $pendingQty!=1?'s':'' ?> pending <?= isset($pendingExchangeItemIds[$item['id']]) ? 'exchange' : 'return' ?> receipt
                           </div>
                           <?php endif; ?>
                         </div>
