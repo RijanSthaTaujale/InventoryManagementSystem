@@ -184,13 +184,20 @@ function settleReturnedUnit(PDO $pdo, int $productId, ?int $variantId, int $qty,
 // stock/returned_qty half until physical receipt is confirmed.
 // Once a return/exchange claim drops an order's subtotal to 0, there's no
 // product left in it — any leftover total would only be coming from
-// shipping/extra charge, which shouldn't still be owed for a delivery that
-// no longer has anything in it. Zero the total outright in that case.
-function zeroOutIfNoProductLeft(PDO $pdo, int $orderDbId): void {
-    $pdo->prepare("UPDATE orders SET total=0 WHERE id=? AND subtotal<=0")->execute([$orderDbId]);
+// shipping/extra charge. If the order was already delivered, the courier
+// already made the trip, so that charge is still legitimately owed even
+// though every product line got returned/exchanged afterward. But if the
+// return happens before delivery ever completed (rejected straight off the
+// courier), no delivery actually happened — waive it, so the total goes to 0.
+function zeroOutIfNoProductLeft(PDO $pdo, int $orderDbId, bool $wasDelivered): void {
+    if ($wasDelivered) {
+        $pdo->prepare("UPDATE orders SET total = GREATEST(0, extra_charge + shipping_cost - discount) WHERE id=? AND subtotal<=0")->execute([$orderDbId]);
+    } else {
+        $pdo->prepare("UPDATE orders SET total=0 WHERE id=? AND subtotal<=0")->execute([$orderDbId]);
+    }
 }
 
-function returnOrderItem(PDO $pdo, array $item, int $qty, int $userId, string $orderRef, ?string $reason, bool $damaged = false): float {
+function returnOrderItem(PDO $pdo, array $item, int $qty, int $userId, string $orderRef, ?string $reason, bool $damaged, bool $wasDelivered): float {
     $productId = (int)($item['product_id'] ?? 0);
     $variantId = $item['variant_id'] !== null ? (int)$item['variant_id'] : null;
 
@@ -201,7 +208,7 @@ function returnOrderItem(PDO $pdo, array $item, int $qty, int $userId, string $o
     $amount = round($qty * (float)$item['sell_price'], 2);
     $pdo->prepare("UPDATE orders SET subtotal = GREATEST(0, subtotal - ?), total = GREATEST(0, total - ?) WHERE id=?")
         ->execute([$amount, $amount, $item['order_id']]);
-    zeroOutIfNoProductLeft($pdo, (int)$item['order_id']);
+    zeroOutIfNoProductLeft($pdo, (int)$item['order_id'], $wasDelivered);
 
     $pdo->prepare("INSERT INTO order_returns (order_id,order_item_id,qty,amount,damaged,is_exchange,reason,returned_by,received_at) VALUES (?,?,?,?,?,0,?,?,NOW())")
         ->execute([$item['order_id'], $item['id'], $qty, $amount, $damaged ? 1 : 0, $reason, $userId]);
@@ -244,7 +251,7 @@ function recalcPaymentStatus(PDO $pdo, int $orderDbId): void {
 function claimExchangeReturn(PDO $pdo, array $item, int $qty, int $userId, string $orderRef, ?string $reason, ?int $newOrderId): float {
     $amount = round($qty * (float)$item['sell_price'], 2);
 
-    $origStmt = $pdo->prepare("SELECT total, amount_paid FROM orders WHERE id=?");
+    $origStmt = $pdo->prepare("SELECT total, amount_paid, status FROM orders WHERE id=?");
     $origStmt->execute([$item['order_id']]);
     $orig = $origStmt->fetch();
     $origTotal = (float)$orig['total'];
@@ -253,7 +260,7 @@ function claimExchangeReturn(PDO $pdo, array $item, int $qty, int $userId, strin
 
     $pdo->prepare("UPDATE orders SET subtotal = GREATEST(0, subtotal - ?), total = GREATEST(0, total - ?), amount_paid = GREATEST(0, amount_paid - ?) WHERE id=?")
         ->execute([$amount, $amount, $credit, $item['order_id']]);
-    zeroOutIfNoProductLeft($pdo, (int)$item['order_id']);
+    zeroOutIfNoProductLeft($pdo, (int)$item['order_id'], $orig['status'] === 'delivered');
     recalcPaymentStatus($pdo, (int)$item['order_id']);
 
     $pdo->prepare("INSERT INTO order_returns (order_id,order_item_id,qty,amount,damaged,is_exchange,reason,returned_by,new_order_id) VALUES (?,?,?,?,0,1,?,?,?)")
@@ -815,7 +822,7 @@ if ($action === 'status' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             foreach ($returnItemsStmt->fetchAll() as $ri) {
                 $remaining = (int)$ri['qty'] - (int)$ri['returned_qty'] - pendingExchangeQty($pdo, (int)$ri['id']);
                 if ($remaining > 0) {
-                    returnOrderItem($pdo, $ri, $remaining, $user['id'], $orderId, 'Full order return');
+                    returnOrderItem($pdo, $ri, $remaining, $user['id'], $orderId, 'Full order return', false, $order['status'] === 'delivered');
                 }
             }
             $pdo->prepare("UPDATE orders SET stock_restored=1 WHERE id=?")->execute([$order['id']]);

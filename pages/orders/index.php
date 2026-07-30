@@ -370,6 +370,9 @@ include __DIR__ . '/../../components/head.php';
                 <?php if ($isExchanged): ?>
                 <div style="font-size:.68rem;font-weight:700;color:#6d28d9;margin-top:2px">&#8644; Exchanged</div>
                 <?php endif; ?>
+                <?php if ($o['exchanged_from_order_id']): ?>
+                <div style="font-size:.68rem;font-weight:700;color:#6d28d9;margin-top:2px">&#8644; Exchange Order</div>
+                <?php endif; ?>
               </td>
               <?php
                 $productNames = $o['product_names'] ? explode('~~', $o['product_names']) : [];
