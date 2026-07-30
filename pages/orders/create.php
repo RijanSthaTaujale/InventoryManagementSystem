@@ -168,9 +168,12 @@ include __DIR__ . '/../../components/head.php';
                   <div style="font-size:.74rem;color:var(--text-muted)"><?= e($rc['variant_info']) ?></div>
                   <?php endif; ?>
                 </div>
-                <div style="font-size:.8rem;font-weight:600;color:var(--text-secondary);white-space:nowrap"><?= $currency ?> <?= number_format($rc['sell_price'], 0) ?>/unit</div>
+                <span class="return-item-value" data-price="<?= (float)$rc['sell_price'] ?>" style="font-size:.8rem;font-weight:600;color:var(--text-secondary);white-space:nowrap">
+                  <?= $currency ?> <?= number_format($rc['sell_price'], 0) ?> &times; <?= (int)$rc['remaining'] ?> = <?= $currency ?> <?= number_format($rc['sell_price'] * $rc['remaining'], 0) ?>
+                </span>
                 <input type="number" class="return-item-qty form-control" data-item-id="<?= (int)$rc['item_id'] ?>"
                        min="1" max="<?= (int)$rc['remaining'] ?>" value="<?= (int)$rc['remaining'] ?>" disabled
+                       oninput="updateReturnItemValue(this)"
                        style="width:70px;text-align:center">
                 <span style="font-size:.74rem;color:var(--text-muted);white-space:nowrap">of <?= (int)$rc['remaining'] ?></span>
               </label>
@@ -535,6 +538,15 @@ function removeItem(i)     { items.splice(i,1); renderItems(); recalc(); }
 function toggleReturnQty(cb) {
   const qtyInput = document.querySelector(`.return-item-qty[data-item-id="${cb.dataset.itemId}"]`);
   qtyInput.disabled = !cb.checked;
+}
+
+// Keeps the "Rs X × qty = Rs total" line in sync as the return qty is edited.
+function updateReturnItemValue(qtyInput) {
+  const row   = qtyInput.closest('label');
+  const valEl = row.querySelector('.return-item-value');
+  const price = parseFloat(valEl.dataset.price) || 0;
+  const qty   = Math.max(0, parseInt(qtyInput.value) || 0);
+  valEl.textContent = `${CURRENCY} ${price.toLocaleString()} × ${qty} = ${CURRENCY} ${(price * qty).toLocaleString()}`;
 }
 
 function recalc() {
