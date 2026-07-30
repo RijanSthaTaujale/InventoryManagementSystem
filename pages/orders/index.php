@@ -112,16 +112,21 @@ if ($pagePhones) {
     }
 }
 
-// Exchanged orders (scoped to the orders on this page) — a real exchange has
-// a replacement order (new_order_id); a plain Return claimed via the same
-// flow does not, and shouldn't be badged as an exchange.
+// Exchanged / Returned orders (scoped to the orders on this page) — a real
+// exchange has a replacement order (new_order_id); a plain Return claimed
+// via the same flow does not, so the two get separate badges.
 $exchangedOrderIds = [];
+$returnedOrderIds  = [];
 $pageOrderDbIds = array_column($orders, 'id');
 if ($pageOrderDbIds) {
     $placeholders = implode(',', array_fill(0, count($pageOrderDbIds), '?'));
     $exStmt = $pdo->prepare("SELECT DISTINCT order_id FROM order_returns WHERE new_order_id IS NOT NULL AND order_id IN ($placeholders)");
     $exStmt->execute($pageOrderDbIds);
     $exchangedOrderIds = array_flip($exStmt->fetchAll(PDO::FETCH_COLUMN));
+
+    $retStmt = $pdo->prepare("SELECT DISTINCT order_id FROM order_returns WHERE new_order_id IS NULL AND order_id IN ($placeholders)");
+    $retStmt->execute($pageOrderDbIds);
+    $returnedOrderIds = array_flip($retStmt->fetchAll(PDO::FETCH_COLUMN));
 }
 
 // Status counts for tab bar — one grouped query instead of one COUNT per
@@ -341,6 +346,7 @@ include __DIR__ . '/../../components/head.php';
               $isDuplicate   = $o['customer_phone'] && isset($duplicateKeys[$o['customer_phone'] . '|' . $rowDate]);
               $recurringCount = $o['customer_phone'] ? ($recurringCounts[$o['customer_phone']] ?? 0) : 0;
               $isExchanged   = isset($exchangedOrderIds[$o['id']]);
+              $isReturned    = isset($returnedOrderIds[$o['id']]);
               $rowStyle      = $isBlacklisted ? 'background:#fef2f2' : ($isDuplicate ? 'background:#fefce8' : '');
             ?>
             <tr style="<?= $rowStyle ?>">
@@ -373,6 +379,8 @@ include __DIR__ . '/../../components/head.php';
                 <?php endif; ?>
                 <?php if ($isExchanged): ?>
                 <div style="font-size:.68rem;font-weight:700;color:#6d28d9;margin-top:2px">&#8644; Exchanged</div>
+                <?php elseif ($isReturned): ?>
+                <div style="font-size:.68rem;font-weight:700;color:#f97316;margin-top:2px">&#8617; Returned</div>
                 <?php endif; ?>
                 <?php if ($o['exchanged_from_order_id']): ?>
                 <div style="font-size:.68rem;font-weight:700;color:#6d28d9;margin-top:2px">&#8644; Exchange Order</div>
