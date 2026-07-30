@@ -403,12 +403,12 @@ include __DIR__ . '/../../components/head.php';
                   $paidReason = match ($o['payment_method']) {
                       'Prepaid'         => ['&#10003;', '#22c55e', 'prepaid'],
                       'Partial Payment' => ['&#10003;', '#22c55e', 'partially prepaid'],
-                      'Exchange Credit' => ['&#10003;', '#22c55e', 'exchange'],
+                      'Exchange Credit' => ['&#10003;', '#6d28d9', 'exchange'],
                       default           => ['&#10003;', '#22c55e', 'collected on delivery'],
                   };
                 ?>
                 <div style="font-size:.66rem;font-weight:600;color:<?= $paidReason[1] ?>;margin-top:1px">
-                  <?= $paidReason[0] ?> <?= $currency ?> <?= number_format($o['amount_paid'],0) ?> <?= $paidReason[2] ?>
+                  <?= $paidReason[0] ?> <?= $paidReason[2] ?>
                 </div>
                 <?php endif; ?>
               </td>
