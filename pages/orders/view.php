@@ -43,9 +43,9 @@ $returnedStmt->execute([$order['id']]);
 $totalReturned = (float)$returnedStmt->fetchColumn();
 
 // Which order_item rows had an Exchange (not just a plain Return) against
-// them — a real flag, not the free-text reason, since staff can overwrite
-// the reason with their own note and we'd otherwise lose the signal.
-$exchangedItemIds = $pdo->prepare("SELECT DISTINCT order_item_id FROM order_returns WHERE order_id=? AND is_exchange=1");
+// them — a real exchange has a replacement order (new_order_id); a plain
+// Return claimed via the same flow does not.
+$exchangedItemIds = $pdo->prepare("SELECT DISTINCT order_item_id FROM order_returns WHERE order_id=? AND new_order_id IS NOT NULL");
 $exchangedItemIds->execute([$order['id']]);
 $exchangedItemIds = array_flip($exchangedItemIds->fetchAll(PDO::FETCH_COLUMN));
 $orderHasExchange = !empty($exchangedItemIds);
@@ -275,16 +275,16 @@ include __DIR__ . '/../../components/head.php';
                 <span style="font-weight:600;color:var(--text)"><?= $currency ?> <?= number_format($order['shipping_cost'], 0) ?></span>
               </div>
               <?php endif; ?>
-              <div style="display:flex;justify-content:space-between;font-size:1rem;font-weight:700;padding-top:8px;border-top:1px solid var(--border)">
-                <span>Total <span style="font-weight:500;color:var(--text-muted);font-size:.78rem">(Order Value)</span></span>
-                <span style="color:var(--primary)"><?= $currency ?> <?= number_format($order['total'], 0) ?></span>
-              </div>
               <?php
                 $amountToCollect = max(0, (float)$order['total'] - (float)$order['amount_paid']);
               ?>
-              <div style="display:flex;justify-content:space-between;font-size:.9rem;font-weight:700">
+              <div style="display:flex;justify-content:space-between;font-size:1rem;font-weight:700;padding-top:8px;border-top:1px solid var(--border)">
                 <span>Amount <span style="font-weight:500;color:var(--text-muted);font-size:.78rem">(to collect)</span></span>
                 <span style="color:<?= $amountToCollect > 0 ? 'var(--text)' : '#22c55e' ?>"><?= $currency ?> <?= number_format($amountToCollect, 0) ?></span>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:.9rem;font-weight:700">
+                <span>Total <span style="font-weight:500;color:var(--text-muted);font-size:.78rem">(Order Value)</span></span>
+                <span style="color:var(--primary)"><?= $currency ?> <?= number_format($order['total'], 0) ?></span>
               </div>
               <?php if ($order['amount_paid'] > 0): ?>
               <div style="display:flex;justify-content:space-between;font-size:.76rem;color:#22c55e;margin-top:-2px">

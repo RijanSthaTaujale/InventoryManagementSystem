@@ -168,6 +168,7 @@ include __DIR__ . '/../../components/head.php';
                   <div style="font-size:.74rem;color:var(--text-muted)"><?= e($rc['variant_info']) ?></div>
                   <?php endif; ?>
                 </div>
+                <div style="font-size:.8rem;font-weight:600;color:var(--text-secondary);white-space:nowrap"><?= $currency ?> <?= number_format($rc['sell_price'], 0) ?>/unit</div>
                 <input type="number" class="return-item-qty form-control" data-item-id="<?= (int)$rc['item_id'] ?>"
                        min="1" max="<?= (int)$rc['remaining'] ?>" value="<?= (int)$rc['remaining'] ?>" disabled
                        style="width:70px;text-align:center">
@@ -254,14 +255,6 @@ include __DIR__ . '/../../components/head.php';
                       <input type="number" id="amountPaidInput" class="form-control" min="0" step="0.01" value="0" disabled
                              style="display:none;width:100px;flex-shrink:0" oninput="amountPaidTouched=true; recalc();">
                     </div>
-                    <?php if (!$isExchangeMode): ?>
-                    <div style="display:flex;align-items:center;gap:6px">
-                      <input type="checkbox" id="manualExchangeCheckbox" style="width:16px;height:16px;flex-shrink:0" onchange="toggleManualExchange()">
-                      <label for="manualExchangeCheckbox" style="font-size:.88rem;font-weight:600;color:var(--text);margin:0;cursor:pointer;white-space:nowrap">Exchange</label>
-                      <input type="number" id="manualExchangeAmountInput" class="form-control" min="0" step="0.01" value="0" disabled
-                             style="display:none;width:100px;flex-shrink:0" oninput="amountPaidTouched=true; recalc();">
-                    </div>
-                    <?php endif; ?>
                   </div>
                 </div>
               </div>
@@ -306,12 +299,12 @@ include __DIR__ . '/../../components/head.php';
               </div>
               <div style="height:1px;background:var(--border);margin:4px 0"></div>
               <div style="display:flex;justify-content:space-between">
-                <span style="font-weight:700;font-size:1rem">Total <span style="font-weight:500;color:var(--text-muted);font-size:.72rem">(Order Value)</span></span>
-                <span id="sumTotal" style="font-weight:700;font-size:1.1rem;color:var(--primary)"><?= $currency ?> 0</span>
+                <span style="font-weight:700;font-size:1rem">Amount <span style="font-weight:500;color:var(--text-muted);font-size:.72rem">(to collect)</span></span>
+                <span id="sumAmountDue" style="font-weight:700;font-size:1.1rem;color:var(--text)"><?= $currency ?> 0</span>
               </div>
               <div style="display:flex;justify-content:space-between">
-                <span style="font-weight:700;font-size:.9rem">Amount <span style="font-weight:500;color:var(--text-muted);font-size:.72rem">(to collect)</span></span>
-                <span id="sumAmountDue" style="font-weight:700;font-size:.95rem;color:var(--text)"><?= $currency ?> 0</span>
+                <span style="font-weight:700;font-size:.9rem">Total <span style="font-weight:500;color:var(--text-muted);font-size:.72rem">(Order Value)</span></span>
+                <span id="sumTotal" style="font-weight:700;font-size:.95rem;color:var(--primary)"><?= $currency ?> 0</span>
               </div>
               <div id="sumAlreadyPaidNote" style="display:none;font-size:.72rem;font-weight:700;color:#22c55e;margin-top:-2px"></div>
             </div>
@@ -567,24 +560,14 @@ function recalc() {
     document.getElementById('amountPaidInput').value = total.toFixed(2);
   }
 
-  const manualExchangeEl = document.getElementById('manualExchangeCheckbox');
-  const manualExchangeChecked = manualExchangeEl ? manualExchangeEl.checked : false;
-  if (manualExchangeChecked && !amountPaidTouched) {
-    document.getElementById('manualExchangeAmountInput').value = total.toFixed(2);
-  }
-
-  const amountPaid = prepaidChecked ? (parseFloat(document.getElementById('amountPaidInput').value) || 0)
-                    : manualExchangeChecked ? (parseFloat(document.getElementById('manualExchangeAmountInput').value) || 0)
-                    : 0;
+  const amountPaid = prepaidChecked ? (parseFloat(document.getElementById('amountPaidInput').value) || 0) : 0;
   const amountDue  = Math.max(0, total - amountPaid);
   const dueEl  = document.getElementById('sumAmountDue');
   const noteEl = document.getElementById('sumAlreadyPaidNote');
   dueEl.textContent = `${CURRENCY} ${amountDue.toLocaleString()}`;
   dueEl.style.color = amountDue > 0 ? 'var(--text)' : '#22c55e';
   if (amountPaid > 0) {
-    noteEl.textContent = manualExchangeChecked
-      ? `✓ ${CURRENCY} ${amountPaid.toLocaleString()} credited from exchange`
-      : `✓ ${CURRENCY} ${amountPaid.toLocaleString()} already paid`;
+    noteEl.textContent = `✓ ${CURRENCY} ${amountPaid.toLocaleString()} already paid`;
     noteEl.style.display = '';
   } else {
     noteEl.style.display = 'none';
@@ -593,42 +576,10 @@ function recalc() {
 
 // The Amount Paid field is only usable once Prepaid is checked — checking it
 // reveals the field pre-filled with the current total (overridable down to
-// any partial figure); unchecking hides it and resets to unpaid. Mutually
-// exclusive with the manual-exchange credit below — both drive the same
-// amount_paid slot, so only one can be active at a time.
+// any partial figure); unchecking hides it and resets to unpaid.
 function togglePrepaid() {
   const checked = document.getElementById('prepaidCheckbox').checked;
-  if (checked) {
-    const mx = document.getElementById('manualExchangeCheckbox');
-    if (mx && mx.checked) {
-      mx.checked = false;
-      document.getElementById('manualExchangeAmountInput').disabled = true;
-      document.getElementById('manualExchangeAmountInput').style.display = 'none';
-      document.getElementById('manualExchangeAmountInput').value = 0;
-    }
-  }
   const input   = document.getElementById('amountPaidInput');
-  input.disabled = !checked;
-  input.style.display = checked ? '' : 'none';
-  amountPaidTouched = false;
-  if (!checked) input.value = 0;
-  recalc();
-}
-
-// Credits a prior payment (from an item this order replaces, handled outside
-// the formal Start Exchange/Return flow) toward this order's total, the same
-// way Prepaid does — just labeled and tracked distinctly (payment_method
-// becomes "Exchange Credit") so it reads correctly everywhere amount_paid is
-// shown, instead of looking like a normal courier-collected payment.
-function toggleManualExchange() {
-  const checked = document.getElementById('manualExchangeCheckbox').checked;
-  if (checked && document.getElementById('prepaidCheckbox').checked) {
-    document.getElementById('prepaidCheckbox').checked = false;
-    document.getElementById('amountPaidInput').disabled = true;
-    document.getElementById('amountPaidInput').style.display = 'none';
-    document.getElementById('amountPaidInput').value = 0;
-  }
-  const input = document.getElementById('manualExchangeAmountInput');
   input.disabled = !checked;
   input.style.display = checked ? '' : 'none';
   amountPaidTouched = false;
@@ -767,10 +718,7 @@ async function submitOrder() {
     fb_page_id:       document.getElementById('fbPage').value || null,
     amount_paid:      document.getElementById('prepaidCheckbox').checked
                         ? Math.max(0, parseFloat(document.getElementById('amountPaidInput').value) || 0)
-                        : (document.getElementById('manualExchangeCheckbox')?.checked
-                            ? Math.max(0, parseFloat(document.getElementById('manualExchangeAmountInput').value) || 0)
-                            : 0),
-    is_manual_exchange: !!document.getElementById('manualExchangeCheckbox')?.checked,
+                        : 0,
     extra_charge:     extraCharge,
     shipping_method:  sel.value,
     shipping_cost:    shipping,

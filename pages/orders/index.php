@@ -34,7 +34,9 @@ if ($status === 'exchanged') {
     // Not a real order.status value — an order can be Delivered (or any
     // other real status) AND have had an item exchanged at the same time,
     // so this is its own virtual filter rather than a status to set.
-    $where[] = "EXISTS (SELECT 1 FROM order_returns r WHERE r.order_id = o.id AND r.is_exchange = 1)";
+    // A real exchange has a replacement order (new_order_id) — a plain
+    // Return claimed via the same flow does not, and shouldn't count here.
+    $where[] = "EXISTS (SELECT 1 FROM order_returns r WHERE r.order_id = o.id AND r.new_order_id IS NOT NULL)";
 } elseif ($status && in_array($status, $validStatuses)) {
     $where[]  = "o.status = ?";
     $params[] = $status;
@@ -110,12 +112,14 @@ if ($pagePhones) {
     }
 }
 
-// Exchanged orders (scoped to the orders on this page)
+// Exchanged orders (scoped to the orders on this page) — a real exchange has
+// a replacement order (new_order_id); a plain Return claimed via the same
+// flow does not, and shouldn't be badged as an exchange.
 $exchangedOrderIds = [];
 $pageOrderDbIds = array_column($orders, 'id');
 if ($pageOrderDbIds) {
     $placeholders = implode(',', array_fill(0, count($pageOrderDbIds), '?'));
-    $exStmt = $pdo->prepare("SELECT DISTINCT order_id FROM order_returns WHERE is_exchange=1 AND order_id IN ($placeholders)");
+    $exStmt = $pdo->prepare("SELECT DISTINCT order_id FROM order_returns WHERE new_order_id IS NOT NULL AND order_id IN ($placeholders)");
     $exStmt->execute($pageOrderDbIds);
     $exchangedOrderIds = array_flip($exStmt->fetchAll(PDO::FETCH_COLUMN));
 }
@@ -130,7 +134,7 @@ foreach ($pdo->query("SELECT status, COUNT(*) AS cnt FROM orders GROUP BY status
     $total += (int)$row['cnt'];
 }
 $statusCounts['all'] = $total;
-$statusCounts['exchanged'] = (int)$pdo->query("SELECT COUNT(DISTINCT order_id) FROM order_returns WHERE is_exchange=1")->fetchColumn();
+$statusCounts['exchanged'] = (int)$pdo->query("SELECT COUNT(DISTINCT order_id) FROM order_returns WHERE new_order_id IS NOT NULL")->fetchColumn();
 
 // Revenue total (admin + supervisor). Excludes shipping_cost — that's a
 // customer-paid pass-through for the courier, not actual sales revenue.
@@ -386,6 +390,23 @@ include __DIR__ . '/../../components/head.php';
                 <?php endif; ?>
                 <?php if ($o['page_name']): ?>
                 <div style="font-size:.7rem;color:var(--text-muted);margin-top:3px">Page: <?= e($o['page_name']) ?></div>
+                <?php endif; ?>
+                <?php
+                  // Indrive (courier) and Store Pickup (shipping method) are
+                  // handled differently on the ground (driver pickup / customer
+                  // walk-in, not a normal courier drop) — flagged yellow so
+                  // staff can spot them at a glance while scanning the list.
+                  $isIndrive     = $o['courier_name'] === 'Indrive';
+                  $isStorePickup = $o['shipping_method'] === 'Store Pickup';
+                ?>
+                <?php if ($isIndrive || $isStorePickup): ?>
+                <div style="font-size:.68rem;font-weight:700;color:#854d0e;background:#fef9c3;display:inline-block;padding:2px 6px;border-radius:4px;margin-top:4px">
+                  <?= $isIndrive ? 'Indrive' : 'Store Pickup' ?>
+                </div>
+                <?php elseif ($o['courier_name']): ?>
+                <div style="font-size:.7rem;color:var(--text-muted);margin-top:3px">Courier: <?= e($o['courier_name']) ?></div>
+                <?php elseif ($o['shipping_method']): ?>
+                <div style="font-size:.7rem;color:var(--text-muted);margin-top:3px">Shipping: <?= e($o['shipping_method']) ?></div>
                 <?php endif; ?>
               </td>
               <?php if ($isAdmin || $isSuper):

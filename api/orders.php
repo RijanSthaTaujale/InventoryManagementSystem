@@ -448,12 +448,6 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     // full-amount default down to 0 (COD) or any partial figure. Tracked
     // separately from $total, since $total can later change via an Exchange.
     $amount_paid = min($amount_paid_in, $total);
-    // Manually-marked exchange order: the entered amount is a credit
-    // carried over from an already-paid item on some other (not formally
-    // linked) order, not a fresh payment collection — labeled distinctly
-    // so it reads correctly on the Orders list and never gets treated as
-    // "courier still needs to collect this".
-    $isManualExchange = !empty($body['is_manual_exchange']);
     if ($amount_paid <= 0) {
         $payment_status = 'unpaid';
         $payment_method = 'Cash on Delivery';
@@ -463,9 +457,6 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $payment_status = 'partial';
         $payment_method = 'Partial Payment';
-    }
-    if ($isManualExchange && $amount_paid > 0) {
-        $payment_method = 'Exchange Credit';
     }
 
     $orderId   = null;
@@ -1107,7 +1098,7 @@ if ($action === 'export_csv' && $_SERVER['REQUEST_METHOD'] === 'GET') {
         $params  = array_merge($params, [$like, $like, $like]);
     }
     if ($status === 'exchanged') {
-        $where[] = "EXISTS (SELECT 1 FROM order_returns r WHERE r.order_id = o.id AND r.is_exchange = 1)";
+        $where[] = "EXISTS (SELECT 1 FROM order_returns r WHERE r.order_id = o.id AND r.new_order_id IS NOT NULL)";
     } elseif ($status && in_array($status, $validStatuses)) { $where[] = "o.status = ?"; $params[] = $status; }
     if ($dateFrom) { $where[] = "DATE(o.created_at) >= ?"; $params[] = $dateFrom; }
     if ($dateTo)   { $where[] = "DATE(o.created_at) <= ?"; $params[] = $dateTo; }
