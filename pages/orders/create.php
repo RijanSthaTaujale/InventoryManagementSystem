@@ -247,25 +247,24 @@ include __DIR__ . '/../../components/head.php';
                 </div>
                 <div class="form-group">
                   <label class="form-label">&nbsp;</label>
-                  <div style="display:flex;align-items:center;gap:6px;height:38px">
-                    <input type="checkbox" id="prepaidCheckbox" style="width:16px;height:16px;flex-shrink:0" onchange="togglePrepaid()">
-                    <label for="prepaidCheckbox" style="font-size:.88rem;font-weight:600;color:var(--text);margin:0;cursor:pointer;white-space:nowrap">Prepaid</label>
-                    <input type="number" id="amountPaidInput" class="form-control" min="0" step="0.01" value="0" disabled
-                           style="display:none;width:100px;flex-shrink:0" oninput="amountPaidTouched=true; recalc();">
+                  <div style="display:flex;align-items:center;gap:14px;height:38px;flex-wrap:wrap">
+                    <div style="display:flex;align-items:center;gap:6px">
+                      <input type="checkbox" id="prepaidCheckbox" style="width:16px;height:16px;flex-shrink:0" onchange="togglePrepaid()">
+                      <label for="prepaidCheckbox" style="font-size:.88rem;font-weight:600;color:var(--text);margin:0;cursor:pointer;white-space:nowrap">Prepaid</label>
+                      <input type="number" id="amountPaidInput" class="form-control" min="0" step="0.01" value="0" disabled
+                             style="display:none;width:100px;flex-shrink:0" oninput="amountPaidTouched=true; recalc();">
+                    </div>
+                    <?php if (!$isExchangeMode): ?>
+                    <div style="display:flex;align-items:center;gap:6px">
+                      <input type="checkbox" id="manualExchangeCheckbox" style="width:16px;height:16px;flex-shrink:0" onchange="toggleManualExchange()">
+                      <label for="manualExchangeCheckbox" style="font-size:.88rem;font-weight:600;color:var(--text);margin:0;cursor:pointer;white-space:nowrap">Exchange</label>
+                      <input type="number" id="manualExchangeAmountInput" class="form-control" min="0" step="0.01" value="0" disabled
+                             style="display:none;width:100px;flex-shrink:0" oninput="amountPaidTouched=true; recalc();">
+                    </div>
+                    <?php endif; ?>
                   </div>
                 </div>
               </div>
-              <?php if (!$isExchangeMode): ?>
-              <div class="form-group">
-                <div style="display:flex;align-items:center;gap:6px">
-                  <input type="checkbox" id="manualExchangeCheckbox" style="width:16px;height:16px;flex-shrink:0" onchange="toggleManualExchange()">
-                  <label for="manualExchangeCheckbox" style="font-size:.88rem;font-weight:600;color:var(--text);margin:0;cursor:pointer">Exchange Order (manually recorded)</label>
-                </div>
-                <div style="font-size:.78rem;color:var(--text-muted);margin-top:4px">Check this if the customer already paid for an item elsewhere and this order replaces it — enter how much of that payment carries over.</div>
-                <input type="number" id="manualExchangeAmountInput" class="form-control" min="0" step="0.01" value="0" disabled
-                       style="display:none;margin-top:8px;max-width:160px" oninput="amountPaidTouched=true; recalc();">
-              </div>
-              <?php endif; ?>
               <div class="form-group">
                 <label class="form-label">Remarks / Staff Notes</label>
                 <textarea id="remarks" class="form-control" rows="3" placeholder="Internal notes about this order..."></textarea>
@@ -570,6 +569,9 @@ function recalc() {
 
   const manualExchangeEl = document.getElementById('manualExchangeCheckbox');
   const manualExchangeChecked = manualExchangeEl ? manualExchangeEl.checked : false;
+  if (manualExchangeChecked && !amountPaidTouched) {
+    document.getElementById('manualExchangeAmountInput').value = total.toFixed(2);
+  }
 
   const amountPaid = prepaidChecked ? (parseFloat(document.getElementById('amountPaidInput').value) || 0)
                     : manualExchangeChecked ? (parseFloat(document.getElementById('manualExchangeAmountInput').value) || 0)

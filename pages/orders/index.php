@@ -400,7 +400,7 @@ include __DIR__ . '/../../components/head.php';
                   $paidReason = match ($o['payment_method']) {
                       'Prepaid'         => ['&#10003;', '#22c55e', 'prepaid'],
                       'Partial Payment' => ['&#10003;', '#22c55e', 'partially prepaid'],
-                      'Exchange Credit' => ['&#8644;', '#6d28d9', 'credited from exchange'],
+                      'Exchange Credit' => ['&#10003;', '#22c55e', 'exchange'],
                       default           => ['&#10003;', '#22c55e', 'collected on delivery'],
                   };
                 ?>

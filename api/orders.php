@@ -1000,9 +1000,12 @@ if ($action === 'bulk_deliver' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // ── DELETE ORDER (admin only) ─────────────────────────────────
 // Permanently removes an order (order_items/order_returns/order_status_log
-// cascade via FK). If stock had already been deducted for it (dispatched or
-// later), that stock is restored first so deleting never silently leaves
-// inventory short.
+// cascade via FK). If stock had already been deducted for it and it's still
+// somewhere between dispatch and the customer's door (dispatched/in_courier),
+// that stock is restored first so deleting never silently leaves inventory
+// short. A Delivered order's stock is NOT restored — those goods are with
+// the customer, not on a shelf, so deleting the record must not pretend
+// they're back in stock.
 if ($action === 'delete_order' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$isAdmin) { echo json_encode(['success' => false, 'message' => 'Only admin can delete orders.']); exit; }
 
@@ -1010,7 +1013,7 @@ if ($action === 'delete_order' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $orderId = trim($body['order_id'] ?? '');
     if (!$orderId) { echo json_encode(['success' => false, 'message' => 'Order ID required.']); exit; }
 
-    $stmt = $pdo->prepare("SELECT id, order_id, stock_deducted FROM orders WHERE order_id=?");
+    $stmt = $pdo->prepare("SELECT id, order_id, status, stock_deducted FROM orders WHERE order_id=?");
     $stmt->execute([$orderId]);
     $order = $stmt->fetch();
     if (!$order) { echo json_encode(['success' => false, 'message' => 'Order not found.']); exit; }
@@ -1026,7 +1029,7 @@ if ($action === 'delete_order' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $pdo->beginTransaction();
     try {
-        if ($order['stock_deducted']) {
+        if ($order['stock_deducted'] && $order['status'] !== 'delivered') {
             adjustOrderStock($pdo, $order['id'], 'return', 1, $user['id'], "Order {$order['order_id']} deleted — stock restored");
         }
         $pdo->prepare("DELETE FROM orders WHERE id=?")->execute([$order['id']]);
@@ -1051,7 +1054,7 @@ if ($action === 'bulk_delete_orders' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $pdo->beginTransaction();
     try {
         foreach ($orderIds as $oid) {
-            $stmt = $pdo->prepare("SELECT id, order_id, stock_deducted FROM orders WHERE order_id=?");
+            $stmt = $pdo->prepare("SELECT id, order_id, status, stock_deducted FROM orders WHERE order_id=?");
             $stmt->execute([$oid]);
             $order = $stmt->fetch();
             if (!$order) continue;
@@ -1060,7 +1063,7 @@ if ($action === 'bulk_delete_orders' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $pendingStmt->execute([$order['id']]);
             if ($pendingStmt->fetch()) continue;
 
-            if ($order['stock_deducted']) {
+            if ($order['stock_deducted'] && $order['status'] !== 'delivered') {
                 adjustOrderStock($pdo, $order['id'], 'return', 1, $user['id'], "Order {$order['order_id']} deleted — stock restored");
             }
             $pdo->prepare("DELETE FROM orders WHERE id=?")->execute([$order['id']]);

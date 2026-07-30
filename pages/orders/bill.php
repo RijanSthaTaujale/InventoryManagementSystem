@@ -81,10 +81,22 @@ include __DIR__ . '/../../components/head.php';
   .bill-words { margin-top: 18px; font-size: .84rem; color: #334155; }
   .bill-footer { text-align: center; padding: 20px; font-weight: 700; color: #002060; letter-spacing: .04em; border-top: 1px dashed #cbd5e1; margin-top: 10px; }
   @media print {
+    /* Chrome/Edge don't print background colors or images by default
+       (the "Background graphics" print-dialog option), which is why the
+       downloaded/printed bill looked flat compared to the on-screen navy
+       header and table headers — force it on so what you see is what
+       prints, without depending on that checkbox. */
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
     body { background: #fff; }
     .bill-toolbar { display: none; }
     .bill-sheet { box-shadow: none; border-radius: 0; margin: 0; max-width: 100%; }
-    @page { margin: 12mm; }
+    /* @page margin:0 leaves the browser's own header/footer (page title +
+       URL on top, date + page number on bottom) no room to draw, which
+       suppresses them without needing the print dialog's "Headers and
+       footers" toggle turned off manually. The margin moves onto the sheet
+       itself instead so the printed page still has real whitespace. */
+    @page { margin: 0; }
+    .bill-sheet { padding: 12mm; }
   }
 </style>
 
