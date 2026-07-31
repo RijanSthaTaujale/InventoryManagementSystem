@@ -127,6 +127,14 @@ if ($isAdmin) {
         'dispatched' => 'Dispatched',
     ];
 }
+// Once an order is Delivered, a return should go through Start
+// Exchange/Return (the deferred-receipt flow) instead of flipping the
+// status straight to Returned, which settles stock/payment immediately
+// with no physical-receipt confirmation step.
+if ($currentStatus === 'delivered') {
+    unset($statusOptions['returned']);
+}
+
 // Always make sure the current status is present, even if outside the role's normal range
 if (!isset($statusOptions[$currentStatus])) {
     $statusOptions = [$currentStatus => $allStatusLabels[$currentStatus] ?? ucfirst($currentStatus)] + $statusOptions;

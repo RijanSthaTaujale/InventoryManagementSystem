@@ -349,6 +349,11 @@ include __DIR__ . '/../../components/head.php';
 
               // Build this row's dropdown options: role-allowed statuses + current status (so it's always selectable/visible)
               $rowOptions = $allowedStatusOptions;
+              // Once Delivered, a return should go through Start Exchange/Return
+              // (deferred receipt) instead of flipping straight to Returned.
+              if ($o['status'] === 'delivered') {
+                  unset($rowOptions['returned']);
+              }
               if (!isset($rowOptions[$o['status']])) {
                   $rowOptions = [$o['status'] => $allStatusLabels[$o['status']] ?? ucfirst($o['status'])] + $rowOptions;
               }
