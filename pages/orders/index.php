@@ -47,7 +47,11 @@ if ($courier)  { $where[] = "o.courier_name = ?"; $params[] = $courier; }
 
 $whereSQL = 'WHERE ' . implode(' AND ', $where);
 
-$couriers = $pdo->query("SELECT DISTINCT courier_name FROM orders WHERE courier_name IS NOT NULL AND courier_name <> '' ORDER BY courier_name")->fetchAll(PDO::FETCH_COLUMN);
+// Sourced from the admin-managed couriers list (same as the order form's
+// Courier Name dropdown) instead of distinct values off past orders, so the
+// two stay in sync — a courier renamed/removed there no longer diverges
+// from what shows up here.
+$couriers = $pdo->query("SELECT name FROM couriers WHERE status='active' ORDER BY name")->fetchAll(PDO::FETCH_COLUMN);
 
 $countStmt = $pdo->prepare("SELECT COUNT(*) FROM orders o $whereSQL");
 $countStmt->execute($params);
