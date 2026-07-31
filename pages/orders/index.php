@@ -79,22 +79,20 @@ $orders = $stmt->fetchAll();
 // Blacklist lookup (small table — load whole set once)
 $blacklistSet = array_flip($pdo->query("SELECT phone FROM customer_blacklist")->fetchAll(PDO::FETCH_COLUMN));
 
-// Duplicate detection: same phone + same page + same day appearing more than
-// once, scoped to phones present on this page for efficiency. Same phone but
-// a different page (e.g. a customer ordering from two different FB pages the
-// same day) is not a duplicate.
+// Duplicate detection: same phone + same day appearing more than once,
+// scoped to phones present on this page for efficiency.
 $pagePhones = array_values(array_unique(array_filter(array_column($orders, 'customer_phone'))));
 $duplicateKeys = [];
 if ($pagePhones) {
     $placeholders = implode(',', array_fill(0, count($pagePhones), '?'));
     $dupStmt = $pdo->prepare("
-        SELECT customer_phone, fb_page_id, DATE(created_at) AS d, COUNT(*) AS c
+        SELECT customer_phone, DATE(created_at) AS d, COUNT(*) AS c
         FROM orders WHERE customer_phone IN ($placeholders)
-        GROUP BY customer_phone, fb_page_id, DATE(created_at) HAVING c > 1
+        GROUP BY customer_phone, DATE(created_at) HAVING c > 1
     ");
     $dupStmt->execute($pagePhones);
     foreach ($dupStmt->fetchAll() as $row) {
-        $duplicateKeys[$row['customer_phone'] . '|' . $row['fb_page_id'] . '|' . $row['d']] = true;
+        $duplicateKeys[$row['customer_phone'] . '|' . $row['d']] = true;
     }
 }
 
@@ -112,7 +110,6 @@ if ($pagePhones) {
           AND (
             SELECT COUNT(*) FROM orders o2
             WHERE o2.customer_phone = o.customer_phone
-              AND o2.fb_page_id <=> o.fb_page_id
               AND DATE(o2.created_at) = DATE(o.created_at)
           ) = 1
         GROUP BY customer_phone HAVING c > 1
@@ -354,7 +351,7 @@ include __DIR__ . '/../../components/head.php';
 
               $isBlacklisted = $o['customer_phone'] && isset($blacklistSet[$o['customer_phone']]);
               $rowDate       = date('Y-m-d', strtotime($o['created_at']));
-              $isDuplicate   = $o['customer_phone'] && isset($duplicateKeys[$o['customer_phone'] . '|' . $o['fb_page_id'] . '|' . $rowDate]);
+              $isDuplicate   = $o['customer_phone'] && isset($duplicateKeys[$o['customer_phone'] . '|' . $rowDate]);
               $recurringCount = $o['customer_phone'] ? ($recurringCounts[$o['customer_phone']] ?? 0) : 0;
               $isExchanged   = isset($exchangedOrderIds[$o['id']]);
               $isReturned    = isset($returnedOrderIds[$o['id']]);
@@ -474,9 +471,10 @@ include __DIR__ . '/../../components/head.php';
                   <a href="<?= APP_URL ?>/pages/orders/create.php?edit=<?= urlencode($o['order_id']) ?>" class="btn btn-outline btn-xs">Edit</a>
                   <?php endif; ?>
                   <?php if (!empty($o['remarks'])): ?>
-                  <span title="<?= e($o['remarks']) ?>" style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;flex-shrink:0;border-radius:50%;background:#fef3c7;color:#b45309;cursor:help;box-shadow:0 0 0 1px #fde68a">
+                  <button type="button" class="remarks-btn" data-remarks="<?= e($o['remarks']) ?>" onclick="showRemarksBox(event, this)"
+                          style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;flex-shrink:0;border-radius:50%;background:#fef3c7;color:#b45309;cursor:pointer;box-shadow:0 0 0 1px #fde68a;border:none;padding:0">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                  </span>
+                  </button>
                   <?php endif; ?>
                   <?php if ($isAdmin): ?>
                   <button onclick="deleteOrder('<?= e($o['order_id']) ?>')" class="btn btn-outline btn-xs" style="color:#ef4444;border-color:#fca5a5" title="Delete order">
@@ -518,8 +516,37 @@ include __DIR__ . '/../../components/head.php';
 
 <div class="toast-container" id="toastContainer"></div>
 
+<div id="remarksBox" style="display:none;position:fixed;z-index:1000;max-width:300px;background:var(--card-bg,#fff);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-md);padding:12px 14px;font-size:.82rem;line-height:1.5;color:var(--text)"></div>
+
 <script>
 const APP_URL = '<?= APP_URL ?>';
+
+// Remarks icon opens a floating box positioned next to the button (not the
+// browser's native title tooltip, which can't be styled and disappears too
+// fast to read a longer note) — click elsewhere or the same button to close.
+function showRemarksBox(event, btn) {
+  event.stopPropagation();
+  const box = document.getElementById('remarksBox');
+  const alreadyOpenForThis = box.style.display !== 'none' && box.dataset.forBtn === btn.dataset.remarks + '';
+  if (alreadyOpenForThis) { box.style.display = 'none'; return; }
+
+  box.textContent = btn.dataset.remarks;
+  box.dataset.forBtn = btn.dataset.remarks;
+  box.style.display = 'block';
+
+  const r = btn.getBoundingClientRect();
+  const boxWidth = 300;
+  let left = r.left;
+  if (left + boxWidth > window.innerWidth - 12) left = window.innerWidth - boxWidth - 12;
+  box.style.left = `${Math.max(12, left)}px`;
+  box.style.top  = `${r.bottom + 6}px`;
+}
+document.addEventListener('click', (e) => {
+  const box = document.getElementById('remarksBox');
+  if (box.style.display !== 'none' && !box.contains(e.target) && !e.target.closest('.remarks-btn')) {
+    box.style.display = 'none';
+  }
+});
 
 // ── Date filter persistence (localStorage) ──────────────────
 (function persistDateFilter() {
