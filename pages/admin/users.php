@@ -43,8 +43,9 @@ $roleCounts = $pdo->query("SELECT role, COUNT(*) FROM users GROUP BY role")->fet
 $totalUsers = array_sum($roleCounts);
 
 // "Active now" per user on this page — their most recent session is still
-// open (no logout) and had activity within the last 5 minutes. A session
-// left open with stale activity (browser closed without logging out) isn't
+// open (no logout) and had activity within the last minute. A session left
+// open with stale activity (browser closed without logging out — also
+// caught instantly by the tab-close beacon in components/foot.php) isn't
 // counted as active.
 $activeNow = [];
 $pageUserIds = array_column($users, 'id');
@@ -56,7 +57,7 @@ if ($pageUserIds) {
         INNER JOIN (
             SELECT user_id, MAX(id) AS max_id FROM user_sessions WHERE user_id IN ($placeholders) GROUP BY user_id
         ) latest ON latest.max_id = s.id
-        WHERE s.logout_at IS NULL AND s.last_activity_at >= NOW() - INTERVAL 5 MINUTE
+        WHERE s.logout_at IS NULL AND s.last_activity_at >= NOW() - INTERVAL 1 MINUTE
     ");
     $actStmt->execute($pageUserIds);
     $activeNow = array_flip($actStmt->fetchAll(PDO::FETCH_COLUMN));

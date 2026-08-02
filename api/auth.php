@@ -16,6 +16,21 @@ if ($action === 'logout') {
     exit;
 }
 
+// ── MARK OFFLINE (tab/browser close beacon) ───────────────────
+// Fired via navigator.sendBeacon on pagehide (see components/foot.php) so
+// "Active now" reflects a closed tab within moments instead of waiting out
+// the staleness window. Does NOT destroy the session — the login itself
+// still lasts a month; this only marks the activity log's current entry as
+// closed. If the same browser comes back, auth_guard.php's heartbeat clears
+// this the moment a real request happens again.
+if ($action === 'mark_offline' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!empty($_SESSION['session_log_id'])) {
+        $pdo->prepare("UPDATE user_sessions SET logout_at=NOW() WHERE id=?")->execute([$_SESSION['session_log_id']]);
+    }
+    echo json_encode(['success' => true]);
+    exit;
+}
+
 // ── LOGIN ────────────────────────────────────────────────────
 if ($action === 'login' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $body = json_decode(file_get_contents('php://input'), true);

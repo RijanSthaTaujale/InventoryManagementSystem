@@ -14,6 +14,15 @@ function showToast(msg, type = 'info') {
   container.appendChild(t);
   setTimeout(() => { t.classList.add('hiding'); setTimeout(() => t.remove(), 250); }, 3200);
 }
+
+// Marks this session offline the moment the tab/browser actually closes
+// (or navigates away), instead of waiting for the "Active now" staleness
+// window to expire — sendBeacon works even as the page is unloading, unlike
+// a normal fetch. Doesn't log the user out; a real request from the same
+// browser clears this again (see config/auth_guard.php).
+window.addEventListener('pagehide', () => {
+  navigator.sendBeacon('<?= APP_URL ?>/api/auth.php?action=mark_offline');
+});
 </script>
 </body>
 </html>

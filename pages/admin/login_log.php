@@ -110,7 +110,7 @@ include __DIR__ . '/../../components/head.php';
             <?php endif; ?>
             <?php foreach ($sessions as $s):
               $loginTs    = strtotime($s['created_at']);
-              $isStillOn  = $s['logout_at'] === null && strtotime($s['last_activity_at']) >= time() - 300;
+              $isStillOn  = $s['logout_at'] === null && strtotime($s['last_activity_at']) >= time() - 60;
               $isAbandoned = $s['logout_at'] === null && !$isStillOn;
             ?>
             <tr>
