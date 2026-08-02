@@ -73,8 +73,11 @@ include __DIR__ . '/../../components/head.php';
       <div class="flex-between mb-4">
         <div>
           <h1 style="font-size:1.25rem;font-weight:700">Login Log</h1>
-          <p style="font-size:.82rem;color:var(--text-secondary);margin-top:2px"><?= number_format($total) ?> session<?= $total!=1?'s':'' ?> recorded</p>
+          <p style="font-size:.82rem;color:var(--text-secondary);margin-top:2px">
+            <?= number_format($total) ?> session<?= $total!=1?'s':'' ?> recorded — this tracks online/offline activity, separate from a user's account Status on the Users page
+          </p>
         </div>
+        <button class="btn btn-outline btn-sm" onclick="clearLog()">Clear Log</button>
       </div>
 
       <!-- Filters -->
@@ -102,11 +105,12 @@ include __DIR__ . '/../../components/head.php';
               <th>Logged Out At</th>
               <th>Duration</th>
               <th>IP</th>
+              <th style="width:70px">Actions</th>
             </tr>
           </thead>
           <tbody>
             <?php if (empty($sessions)): ?>
-            <tr><td colspan="5" style="text-align:center;padding:32px;color:var(--text-muted)">No sessions recorded yet</td></tr>
+            <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted)">No sessions recorded yet</td></tr>
             <?php endif; ?>
             <?php foreach ($sessions as $s):
               $loginTs    = strtotime($s['created_at']);
@@ -123,7 +127,7 @@ include __DIR__ . '/../../components/head.php';
                 <?php if ($s['logout_at']): ?>
                   <?= date('d M Y, h:i A', strtotime($s['logout_at'])) ?>
                 <?php elseif ($isStillOn): ?>
-                  <span style="color:#16a34a;font-weight:700">&#9679; Active now</span>
+                  <span style="color:#16a34a;font-weight:700">&#9679; Online now</span>
                 <?php else: ?>
                   <span style="color:var(--text-muted)">— (not logged out)</span>
                 <?php endif; ?>
@@ -138,6 +142,11 @@ include __DIR__ . '/../../components/head.php';
                 <?php endif; ?>
               </td>
               <td style="font-size:.78rem;color:var(--text-muted)"><?= e($s['ip'] ?? '—') ?></td>
+              <td>
+                <button class="btn btn-outline btn-xs" style="color:#ef4444;border-color:#fca5a5" onclick="deleteLogEntry(<?= (int)$s['id'] ?>)" title="Delete this entry">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                </button>
+              </td>
             </tr>
             <?php endforeach; ?>
           </tbody>
@@ -149,4 +158,31 @@ include __DIR__ . '/../../components/head.php';
     </main>
   </div>
 </div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+const APP_URL = '<?= APP_URL ?>';
+
+async function deleteLogEntry(id) {
+  if (!confirm('Delete this log entry?')) return;
+  const r = await fetch(`${APP_URL}/api/admin.php?action=delete_login_log`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ id })
+  });
+  const d = await r.json();
+  if (d.success) { showToast('Entry deleted', 'success'); setTimeout(() => location.reload(), 500); }
+  else showToast(d.message || 'Failed', 'error');
+}
+
+async function clearLog() {
+  if (!confirm('Clear the login log? Sessions that are currently online are kept so their status keeps showing correctly.')) return;
+  const r = await fetch(`${APP_URL}/api/admin.php?action=clear_login_log`, {
+    method: 'POST', headers: {'Content-Type':'application/json'}
+  });
+  const d = await r.json();
+  if (d.success) { showToast(`Cleared ${d.deleted} entr${d.deleted!=1?'ies':'y'}`, 'success'); setTimeout(() => location.reload(), 500); }
+  else showToast(d.message || 'Failed', 'error');
+}
+</script>
 <?php include __DIR__ . '/../../components/foot.php'; ?>

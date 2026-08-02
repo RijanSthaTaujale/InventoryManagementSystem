@@ -42,11 +42,12 @@ $users = $stmt->fetchAll();
 $roleCounts = $pdo->query("SELECT role, COUNT(*) FROM users GROUP BY role")->fetchAll(PDO::FETCH_KEY_PAIR);
 $totalUsers = array_sum($roleCounts);
 
-// "Active now" per user on this page — their most recent session is still
-// open (no logout) and had activity within the last minute. A session left
-// open with stale activity (browser closed without logging out — also
-// caught instantly by the tab-close beacon in components/foot.php) isn't
-// counted as active.
+// "Online now" per user on this page — deliberately distinct wording from
+// the Status column (which is account activation, admin/inactive/deactivated
+// — unrelated). This is presence: their most recent session is still open
+// (no logout) and had activity within the last minute. A session left open
+// with stale activity (browser closed without logging out — also caught
+// instantly by the tab-close beacon in components/foot.php) isn't online.
 $activeNow = [];
 $pageUserIds = array_column($users, 'id');
 if ($pageUserIds) {
@@ -168,7 +169,7 @@ include __DIR__ . '/../../components/head.php';
                       <?= strtoupper(substr($u['name'],0,1)) ?>
                     </div>
                     <?php if (isset($activeNow[$u['id']])): ?>
-                    <span title="Active now" style="position:absolute;bottom:-1px;right:-1px;width:11px;height:11px;background:#22c55e;border-radius:50%;border:2px solid #fff"></span>
+                    <span title="Online now" style="position:absolute;bottom:-1px;right:-1px;width:11px;height:11px;background:#22c55e;border-radius:50%;border:2px solid #fff"></span>
                     <?php endif; ?>
                   </div>
                   <div>
@@ -176,7 +177,7 @@ include __DIR__ . '/../../components/head.php';
                       <?= e($u['name']) ?>
                       <?= $isSelf ? '<span style="font-size:.7rem;color:var(--text-muted)">(you)</span>' : '' ?>
                       <?php if (isset($activeNow[$u['id']])): ?>
-                      <span style="font-size:.66rem;font-weight:700;color:#16a34a">&#9679; Active now</span>
+                      <span style="font-size:.66rem;font-weight:700;color:#16a34a">&#9679; Online now</span>
                       <?php endif; ?>
                     </div>
                     <div style="font-size:.76rem;color:var(--text-muted)"><?= e($u['email']) ?></div>

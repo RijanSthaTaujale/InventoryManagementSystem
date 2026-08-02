@@ -221,4 +221,30 @@ if ($action === 'delete_payment_method' && $_SERVER['REQUEST_METHOD'] === 'POST'
     exit;
 }
 
+// ── DELETE LOGIN LOG ENTRY ─────────────────────────────────────
+if ($action === 'delete_login_log' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $body = json_decode(file_get_contents('php://input'), true);
+    $id   = (int)($body['id'] ?? 0);
+
+    if (!$id) { echo json_encode(['success'=>false,'message'=>'Invalid session']); exit; }
+
+    $pdo->prepare("DELETE FROM user_sessions WHERE id=?")->execute([$id]);
+    echo json_encode(['success'=>true]);
+    exit;
+}
+
+// ── CLEAR LOGIN LOG ─────────────────────────────────────────────
+// Only clears sessions that aren't currently online (same definition as the
+// Users page's "Online now" indicator) — deleting a row still being tracked
+// as online would blank that indicator until the user logs in fresh again.
+if ($action === 'clear_login_log' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $stmt = $pdo->prepare("
+        DELETE FROM user_sessions
+        WHERE NOT (logout_at IS NULL AND last_activity_at >= NOW() - INTERVAL 1 MINUTE)
+    ");
+    $stmt->execute();
+    echo json_encode(['success'=>true, 'deleted'=>$stmt->rowCount()]);
+    exit;
+}
+
 echo json_encode(['success'=>false,'message'=>'Invalid action']);
