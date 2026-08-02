@@ -17,6 +17,14 @@ unset($projectRoot, $docRoot, $appUrl);
 
 define('APP_NAME', 'Pompoy Inventory');
 
+// Sessions last a month instead of the PHP default (expiring on browser
+// close / ~24min of inactivity) — staff shouldn't have to re-login daily.
+// Must be set before session_start().
+$oneMonthSeconds = 60 * 60 * 24 * 30;
+ini_set('session.gc_maxlifetime', (string)$oneMonthSeconds);
+session_set_cookie_params($oneMonthSeconds);
+unset($oneMonthSeconds);
+
 session_start();
 
 require_once __DIR__ . '/db.php';

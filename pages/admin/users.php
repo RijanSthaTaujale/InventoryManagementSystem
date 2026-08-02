@@ -42,6 +42,26 @@ $users = $stmt->fetchAll();
 $roleCounts = $pdo->query("SELECT role, COUNT(*) FROM users GROUP BY role")->fetchAll(PDO::FETCH_KEY_PAIR);
 $totalUsers = array_sum($roleCounts);
 
+// "Active now" per user on this page — their most recent session is still
+// open (no logout) and had activity within the last 5 minutes. A session
+// left open with stale activity (browser closed without logging out) isn't
+// counted as active.
+$activeNow = [];
+$pageUserIds = array_column($users, 'id');
+if ($pageUserIds) {
+    $placeholders = implode(',', array_fill(0, count($pageUserIds), '?'));
+    $actStmt = $pdo->prepare("
+        SELECT s.user_id
+        FROM user_sessions s
+        INNER JOIN (
+            SELECT user_id, MAX(id) AS max_id FROM user_sessions WHERE user_id IN ($placeholders) GROUP BY user_id
+        ) latest ON latest.max_id = s.id
+        WHERE s.logout_at IS NULL AND s.last_activity_at >= NOW() - INTERVAL 5 MINUTE
+    ");
+    $actStmt->execute($pageUserIds);
+    $activeNow = array_flip($actStmt->fetchAll(PDO::FETCH_COLUMN));
+}
+
 $baseUrl = APP_URL . '/pages/admin/users.php?' . http_build_query(array_filter([
     'search' => $search, 'role' => $roleFilter, 'status' => $status
 ]));
@@ -59,10 +79,16 @@ include __DIR__ . '/../../components/head.php';
           <h1 style="font-size:1.25rem;font-weight:700">User Management</h1>
           <p style="font-size:.82rem;color:var(--text-secondary);margin-top:2px"><?= number_format($totalUsers) ?> total accounts</p>
         </div>
-        <a href="<?= APP_URL ?>/pages/admin/add_user.php" class="btn btn-primary">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Add User
-        </a>
+        <div style="display:flex;gap:8px">
+          <a href="<?= APP_URL ?>/pages/admin/login_log.php" class="btn btn-outline">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Login Log
+          </a>
+          <a href="<?= APP_URL ?>/pages/admin/add_user.php" class="btn btn-primary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add User
+          </a>
+        </div>
       </div>
 
       <!-- Stat cards -->
@@ -136,11 +162,22 @@ include __DIR__ . '/../../components/head.php';
             <tr>
               <td>
                 <div style="display:flex;align-items:center;gap:10px">
-                  <div style="width:34px;height:34px;background:var(--primary);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:.8rem;font-weight:700;flex-shrink:0">
-                    <?= strtoupper(substr($u['name'],0,1)) ?>
+                  <div style="position:relative;flex-shrink:0">
+                    <div style="width:34px;height:34px;background:var(--primary);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:.8rem;font-weight:700">
+                      <?= strtoupper(substr($u['name'],0,1)) ?>
+                    </div>
+                    <?php if (isset($activeNow[$u['id']])): ?>
+                    <span title="Active now" style="position:absolute;bottom:-1px;right:-1px;width:11px;height:11px;background:#22c55e;border-radius:50%;border:2px solid #fff"></span>
+                    <?php endif; ?>
                   </div>
                   <div>
-                    <div style="font-weight:600;font-size:.88rem"><?= e($u['name']) ?> <?= $isSelf ? '<span style="font-size:.7rem;color:var(--text-muted)">(you)</span>' : '' ?></div>
+                    <div style="font-weight:600;font-size:.88rem;display:flex;align-items:center;gap:6px">
+                      <?= e($u['name']) ?>
+                      <?= $isSelf ? '<span style="font-size:.7rem;color:var(--text-muted)">(you)</span>' : '' ?>
+                      <?php if (isset($activeNow[$u['id']])): ?>
+                      <span style="font-size:.66rem;font-weight:700;color:#16a34a">&#9679; Active now</span>
+                      <?php endif; ?>
+                    </div>
                     <div style="font-size:.76rem;color:var(--text-muted)"><?= e($u['email']) ?></div>
                   </div>
                 </div>

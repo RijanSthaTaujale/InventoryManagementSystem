@@ -38,13 +38,15 @@ CREATE TABLE IF NOT EXISTS `password_resets` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `user_sessions` (
-  `id`         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  `user_id`    INT UNSIGNED NOT NULL,
-  `token`      VARCHAR(100) NOT NULL UNIQUE,
-  `ip`         VARCHAR(45)  DEFAULT NULL,
-  `user_agent` TEXT         DEFAULT NULL,
-  `expires_at` DATETIME     NOT NULL,
-  `created_at` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `id`                INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `user_id`           INT UNSIGNED NOT NULL,
+  `token`              VARCHAR(100) NOT NULL UNIQUE,
+  `ip`                VARCHAR(45)  DEFAULT NULL,
+  `user_agent`        TEXT         DEFAULT NULL,
+  `expires_at`        DATETIME     NOT NULL,
+  `logout_at`         DATETIME     DEFAULT NULL COMMENT 'Set when the user explicitly logs out. NULL for sessions still open or abandoned (browser closed without logging out).',
+  `last_activity_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Refreshed periodically while the session is in use — used to tell "still active" apart from an abandoned session.',
+  `created_at`        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
   INDEX `idx_token` (`token`),
   INDEX `idx_user_id` (`user_id`)
