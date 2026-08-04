@@ -9,9 +9,15 @@ if ($user['role'] !== 'admin') redirect('/pages/dashboard.php');
 $activePage = 'users';
 $pageTitle  = 'Login Log';
 
+// A fresh page load (no filter form ever submitted) defaults to today; once
+// the filter form is submitted — even with the date fields cleared out for
+// an intentional "all time" view — that choice is respected instead of
+// snapping back to today. The hidden "filtered" field is what distinguishes
+// the two (an empty date_from alone can't, since GET always sends it).
+$filtered   = isset($_GET['filtered']);
 $userFilter = (int)($_GET['user_id'] ?? 0);
-$dateFrom   = $_GET['date_from'] ?? '';
-$dateTo     = $_GET['date_to']   ?? '';
+$dateFrom   = $filtered ? ($_GET['date_from'] ?? '') : date('Y-m-d');
+$dateTo     = $filtered ? ($_GET['date_to']   ?? '') : date('Y-m-d');
 $page       = max(1, (int)($_GET['page'] ?? 1));
 $perPage    = 25;
 
@@ -51,8 +57,32 @@ function formatDuration(int $seconds): string {
     return "{$m}m";
 }
 
+// Total time-online per user within the same filtered range as the list
+// below. A session's own elapsed time is: logout_at - login if it was
+// closed out; up to now if it's still online; otherwise up to its last
+// known activity (an abandoned session shouldn't keep accruing "duration"
+// forever just because it was never formally closed).
+$durStmt = $pdo->prepare("
+    SELECT u.id, u.name,
+           COUNT(*) AS session_count,
+           SUM(
+             CASE
+               WHEN s.logout_at IS NOT NULL THEN TIMESTAMPDIFF(SECOND, s.created_at, s.logout_at)
+               WHEN s.last_activity_at >= NOW() - INTERVAL 1 MINUTE THEN TIMESTAMPDIFF(SECOND, s.created_at, NOW())
+               ELSE TIMESTAMPDIFF(SECOND, s.created_at, s.last_activity_at)
+             END
+           ) AS total_seconds
+    FROM user_sessions s
+    JOIN users u ON u.id = s.user_id
+    $whereSQL
+    GROUP BY u.id, u.name
+    ORDER BY total_seconds DESC
+");
+$durStmt->execute($params);
+$durationByUser = $durStmt->fetchAll();
+
 $baseUrl = APP_URL . '/pages/admin/login_log.php?' . http_build_query(array_filter([
-    'user_id' => $userFilter ?: '', 'date_from' => $dateFrom, 'date_to' => $dateTo
+    'filtered' => 1, 'user_id' => $userFilter ?: '', 'date_from' => $dateFrom, 'date_to' => $dateTo
 ]));
 
 include __DIR__ . '/../../components/head.php';
@@ -74,14 +104,40 @@ include __DIR__ . '/../../components/head.php';
         <div>
           <h1 style="font-size:1.25rem;font-weight:700">Login Log</h1>
           <p style="font-size:.82rem;color:var(--text-secondary);margin-top:2px">
-            <?= number_format($total) ?> session<?= $total!=1?'s':'' ?> recorded — this tracks online/offline activity, separate from a user's account Status on the Users page
+            <?= number_format($total) ?> session<?= $total!=1?'s':'' ?> <?= $filtered ? 'in range' : 'today' ?> — this tracks online/offline activity, separate from a user's account Status on the Users page
           </p>
         </div>
         <button class="btn btn-outline btn-sm" onclick="clearLog()">Clear Log</button>
       </div>
 
+      <!-- Total duration by user, over the same filtered range -->
+      <div class="data-table-wrap" style="margin-bottom:16px">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Sessions</th>
+              <th>Total Duration</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php if (empty($durationByUser)): ?>
+            <tr><td colspan="3" style="text-align:center;padding:20px;color:var(--text-muted)">No activity in this range</td></tr>
+            <?php endif; ?>
+            <?php foreach ($durationByUser as $d): ?>
+            <tr>
+              <td style="font-weight:600;font-size:.85rem"><?= e($d['name']) ?></td>
+              <td style="font-size:.82rem;color:var(--text-muted)"><?= number_format($d['session_count']) ?></td>
+              <td style="font-size:.85rem;font-weight:700;color:var(--primary)"><?= formatDuration((int)$d['total_seconds']) ?></td>
+            </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+
       <!-- Filters -->
       <form method="GET" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+        <input type="hidden" name="filtered" value="1">
         <select name="user_id" class="form-control" style="width:auto">
           <option value="">All Users</option>
           <?php foreach ($allUsers as $u): ?>
@@ -91,8 +147,11 @@ include __DIR__ . '/../../components/head.php';
         <input type="date" name="date_from" value="<?= e($dateFrom) ?>" class="form-control" style="width:auto" title="From date">
         <input type="date" name="date_to"   value="<?= e($dateTo)   ?>" class="form-control" style="width:auto" title="To date">
         <button type="submit" class="btn btn-primary btn-sm">Filter</button>
-        <?php if ($userFilter || $dateFrom || $dateTo): ?>
-        <a href="<?= APP_URL ?>/pages/admin/login_log.php" class="btn btn-outline btn-sm">Clear</a>
+        <?php if ($filtered && ($dateFrom !== date('Y-m-d') || $dateTo !== date('Y-m-d') || $userFilter)): ?>
+        <a href="<?= APP_URL ?>/pages/admin/login_log.php" class="btn btn-outline btn-sm">Today</a>
+        <?php endif; ?>
+        <?php if ($dateFrom || $dateTo || $userFilter): ?>
+        <a href="<?= APP_URL ?>/pages/admin/login_log.php?filtered=1" class="btn btn-outline btn-sm">All Time</a>
         <?php endif; ?>
       </form>
 
