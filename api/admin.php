@@ -234,15 +234,26 @@ if ($action === 'delete_login_log' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // ── CLEAR LOGIN LOG ─────────────────────────────────────────────
-// Only clears sessions that aren't currently online (same definition as the
-// Users page's "Online now" indicator) — deleting a row still being tracked
-// as online would blank that indicator until the user logs in fresh again.
+// Deletes login-log rows for space optimization, scoped to an optional
+// user and/or date range (same filters as the Login Log page — pass none
+// for "all users, all time"). Only clears sessions that aren't currently
+// online (same definition as the Users page's "Online now" indicator) —
+// deleting a row still being tracked as online would blank that indicator
+// until the user logs in fresh again.
 if ($action === 'clear_login_log' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    $stmt = $pdo->prepare("
-        DELETE FROM user_sessions
-        WHERE NOT (logout_at IS NULL AND last_activity_at >= NOW() - INTERVAL 1 MINUTE)
-    ");
-    $stmt->execute();
+    $body       = json_decode(file_get_contents('php://input'), true) ?? [];
+    $userFilter = (int)($body['user_id'] ?? 0);
+    $dateFrom   = trim($body['date_from'] ?? '');
+    $dateTo     = trim($body['date_to']   ?? '');
+
+    $where  = ['NOT (logout_at IS NULL AND last_activity_at >= NOW() - INTERVAL 1 MINUTE)'];
+    $params = [];
+    if ($userFilter) { $where[] = 'user_id = ?';        $params[] = $userFilter; }
+    if ($dateFrom)    { $where[] = 'DATE(created_at) >= ?'; $params[] = $dateFrom; }
+    if ($dateTo)      { $where[] = 'DATE(created_at) <= ?'; $params[] = $dateTo; }
+
+    $stmt = $pdo->prepare("DELETE FROM user_sessions WHERE " . implode(' AND ', $where));
+    $stmt->execute($params);
     echo json_encode(['success'=>true, 'deleted'=>$stmt->rowCount()]);
     exit;
 }

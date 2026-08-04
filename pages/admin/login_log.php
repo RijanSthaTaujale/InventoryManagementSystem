@@ -46,7 +46,8 @@ $stmt = $pdo->prepare("
 $stmt->execute($params);
 $sessions = $stmt->fetchAll();
 
-$allUsers = $pdo->query("SELECT id, name FROM users ORDER BY name")->fetchAll();
+$allUsers     = $pdo->query("SELECT id, name FROM users ORDER BY name")->fetchAll();
+$allUsersById = array_column($allUsers, 'name', 'id');
 
 // Formats a whole number of seconds as e.g. "2h 15m", "45m", "<1m".
 function formatDuration(int $seconds): string {
@@ -107,7 +108,10 @@ include __DIR__ . '/../../components/head.php';
             <?= number_format($total) ?> session<?= $total!=1?'s':'' ?> <?= $filtered ? 'in range' : 'today' ?> — this tracks online/offline activity, separate from a user's account Status on the Users page
           </p>
         </div>
-        <button class="btn btn-outline btn-sm" onclick="clearLog()">Clear Log</button>
+        <button class="btn btn-outline btn-sm" style="color:#ef4444;border-color:#fca5a5"
+                onclick="clearLog(<?= $userFilter ?: 0 ?>, '<?= e($dateFrom) ?>', '<?= e($dateTo) ?>', '<?= e($userFilter ? ($allUsersById[$userFilter] ?? 'this user') : 'all users') ?>')">
+          Delete Logs (for space)
+        </button>
       </div>
 
       <!-- Total duration by user, over the same filtered range -->
@@ -232,13 +236,16 @@ async function deleteLogEntry(id) {
   else showToast(d.message || 'Failed', 'error');
 }
 
-async function clearLog() {
-  if (!confirm('Clear the login log? Sessions that are currently online are kept so their status keeps showing correctly.')) return;
+async function clearLog(userId, dateFrom, dateTo, userLabel) {
+  const rangeLabel = (dateFrom || dateTo) ? ` from ${dateFrom || 'the beginning'} to ${dateTo || 'now'}` : ' (all time)';
+  const msg = `Delete login log entries for ${userLabel}${rangeLabel}? Sessions currently online are kept so their status keeps showing correctly. This can't be undone.`;
+  if (!confirm(msg)) return;
   const r = await fetch(`${APP_URL}/api/admin.php?action=clear_login_log`, {
-    method: 'POST', headers: {'Content-Type':'application/json'}
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ user_id: userId || null, date_from: dateFrom || null, date_to: dateTo || null })
   });
   const d = await r.json();
-  if (d.success) { showToast(`Cleared ${d.deleted} entr${d.deleted!=1?'ies':'y'}`, 'success'); setTimeout(() => location.reload(), 500); }
+  if (d.success) { showToast(`Deleted ${d.deleted} entr${d.deleted!=1?'ies':'y'}`, 'success'); setTimeout(() => location.reload(), 500); }
   else showToast(d.message || 'Failed', 'error');
 }
 </script>
