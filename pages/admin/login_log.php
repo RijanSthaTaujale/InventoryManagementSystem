@@ -122,17 +122,25 @@ include __DIR__ . '/../../components/head.php';
               <th>User</th>
               <th>Sessions</th>
               <th>Total Duration</th>
+              <th style="width:70px">Actions</th>
             </tr>
           </thead>
           <tbody>
             <?php if (empty($durationByUser)): ?>
-            <tr><td colspan="3" style="text-align:center;padding:20px;color:var(--text-muted)">No activity in this range</td></tr>
+            <tr><td colspan="4" style="text-align:center;padding:20px;color:var(--text-muted)">No activity in this range</td></tr>
             <?php endif; ?>
             <?php foreach ($durationByUser as $d): ?>
             <tr>
               <td style="font-weight:600;font-size:.85rem"><?= e($d['name']) ?></td>
               <td style="font-size:.82rem;color:var(--text-muted)"><?= number_format($d['session_count']) ?></td>
               <td style="font-size:.85rem;font-weight:700;color:var(--primary)"><?= formatDuration((int)$d['total_seconds']) ?></td>
+              <td>
+                <button class="btn btn-outline btn-xs" style="color:#ef4444;border-color:#fca5a5"
+                        onclick="clearLog(<?= (int)$d['id'] ?>, '<?= e($dateFrom) ?>', '<?= e($dateTo) ?>', '<?= e($d['name']) ?>')"
+                        title="Delete <?= e($d['name']) ?>'s log entries in this range">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                </button>
+              </td>
             </tr>
             <?php endforeach; ?>
           </tbody>
