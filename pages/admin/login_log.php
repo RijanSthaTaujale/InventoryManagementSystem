@@ -104,13 +104,12 @@ include __DIR__ . '/../../components/head.php';
               <th>Login At</th>
               <th>Logged Out At</th>
               <th>Duration</th>
-              <th>IP</th>
               <th style="width:70px">Actions</th>
             </tr>
           </thead>
           <tbody>
             <?php if (empty($sessions)): ?>
-            <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted)">No sessions recorded yet</td></tr>
+            <tr><td colspan="5" style="text-align:center;padding:32px;color:var(--text-muted)">No sessions recorded yet</td></tr>
             <?php endif; ?>
             <?php foreach ($sessions as $s):
               $loginTs    = strtotime($s['created_at']);
@@ -141,7 +140,6 @@ include __DIR__ . '/../../components/head.php';
                   <?= formatDuration(strtotime($s['last_activity_at']) - $loginTs) ?> <span style="font-weight:400;color:var(--text-muted)">(last seen)</span>
                 <?php endif; ?>
               </td>
-              <td style="font-size:.78rem;color:var(--text-muted)"><?= e($s['ip'] ?? '—') ?></td>
               <td>
                 <button class="btn btn-outline btn-xs" style="color:#ef4444;border-color:#fca5a5" onclick="deleteLogEntry(<?= (int)$s['id'] ?>)" title="Delete this entry">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
