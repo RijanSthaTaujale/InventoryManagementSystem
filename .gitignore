@@ -2,6 +2,3 @@
 *.sql.dump
 *_dump.sql
 inventorymanagement_full_dump.sql
-
-# Scheduled backups (scripts/backup_database.ps1 writes here)
-/backups/

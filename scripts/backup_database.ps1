@@ -4,15 +4,22 @@
 # run on a schedule (see Windows Task Scheduler setup instructions from
 # Claude) rather than by hand - that's what makes this "continuous" instead
 # of "whenever someone remembers to."
+#
+# Backups are written outside the git repo entirely (not just gitignored)
+# so a git pull, clean, or reset on the project folder can never touch them.
 
 $MysqlDump = "C:\xampp\mysql\bin\mysqldump.exe"
 $DbName    = "inventorymanagement"
 $DbHost    = "127.0.0.1"
 $DbUser    = "root"
-$BackupDir = "$PSScriptRoot\..\backups"
+$BackupDir = "E:\Projects\Backups\Pompoy Inventory"
 
 if (-not (Test-Path $BackupDir)) {
-    New-Item -ItemType Directory -Path $BackupDir | Out-Null
+    New-Item -ItemType Directory -Path $BackupDir -ErrorAction SilentlyContinue | Out-Null
+    if (-not (Test-Path $BackupDir)) {
+        Write-Error "Could not create or find backup directory: $BackupDir"
+        exit 1
+    }
 }
 
 $timestamp  = Get-Date -Format "yyyy-MM-dd_HH-mm"
