@@ -69,11 +69,12 @@ include __DIR__ . '/../../components/head.php';
               <th>Reason</th>
               <th>Logged By</th>
               <th>Date</th>
+              <th style="width:70px">Actions</th>
             </tr>
           </thead>
           <tbody>
             <?php if (empty($rows)): ?>
-            <tr><td colspan="5" style="text-align:center;padding:32px;color:var(--text-muted)">No damaged stock logged yet</td></tr>
+            <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted)">No damaged stock logged yet</td></tr>
             <?php endif; ?>
             <?php foreach ($rows as $r): ?>
             <tr>
@@ -87,6 +88,11 @@ include __DIR__ . '/../../components/head.php';
               <td>
                 <div style="font-size:.8rem"><?= date('d M Y', strtotime($r['created_at'])) ?></div>
                 <div style="font-size:.72rem;color:var(--text-muted)"><?= date('h:i A', strtotime($r['created_at'])) ?></div>
+              </td>
+              <td>
+                <button class="btn btn-outline btn-xs" style="color:#ef4444;border-color:#fca5a5" onclick="deleteDamageLog(<?= (int)$r['id'] ?>)" title="Delete this entry (stock is not restored)">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                </button>
               </td>
             </tr>
             <?php endforeach; ?>
@@ -190,6 +196,17 @@ async function submitDamage() {
   const d = await r.json();
   closeDamageModal();
   if (d.success) { showToast('Damage logged', 'success'); setTimeout(() => location.reload(), 700); }
+  else showToast(d.message || 'Failed', 'error');
+}
+
+async function deleteDamageLog(id) {
+  if (!confirm('Delete this damage log entry? This only removes the record — the product\'s stock quantity is not restored.')) return;
+  const r = await fetch(`${APP_URL}/api/inventory.php?action=delete_damage_log`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ id })
+  });
+  const d = await r.json();
+  if (d.success) { showToast('Entry deleted', 'success'); setTimeout(() => location.reload(), 500); }
   else showToast(d.message || 'Failed', 'error');
 }
 </script>

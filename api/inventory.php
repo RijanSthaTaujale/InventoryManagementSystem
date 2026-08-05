@@ -106,4 +106,19 @@ if ($action === 'log_damage' && $isAdminOrSupervisor && $_SERVER['REQUEST_METHOD
     exit;
 }
 
+// ── DELETE DAMAGE LOG ENTRY ────────────────────────────────────
+// Removes the log record only — the stock quantity stays as already
+// deducted, this doesn't restore it. Just a space-cleanup delete, not an
+// undo (mirrors how the Login Log's delete works).
+if ($action === 'delete_damage_log' && $isAdminOrSupervisor && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $body = json_decode(file_get_contents('php://input'), true);
+    $id   = (int)($body['id'] ?? 0);
+
+    if (!$id) { echo json_encode(['success'=>false,'message'=>'Invalid entry']); exit; }
+
+    $pdo->prepare("DELETE FROM damaged_products WHERE id=?")->execute([$id]);
+    echo json_encode(['success'=>true]);
+    exit;
+}
+
 echo json_encode(['success'=>false,'message'=>'Invalid action or insufficient permissions']);
