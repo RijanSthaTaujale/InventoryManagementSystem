@@ -19,11 +19,12 @@ $returnTo = trim($_GET['return'] ?? '');
 $backUrl  = APP_URL . '/pages/orders/index.php' . ($returnTo ? '?' . $returnTo : '');
 
 $stmt = $pdo->prepare("
-    SELECT o.*, u1.name AS assigned_name, u2.name AS dispatched_name, u3.name AS created_name, fp.name AS fb_page_name
+    SELECT o.*, u1.name AS assigned_name, u2.name AS dispatched_name, u3.name AS created_name, u4.name AS edited_name, fp.name AS fb_page_name
     FROM orders o
     LEFT JOIN users u1 ON u1.id = o.assigned_to
     LEFT JOIN users u2 ON u2.id = o.dispatched_by
     LEFT JOIN users u3 ON u3.id = o.created_by
+    LEFT JOIN users u4 ON u4.id = o.edited_by
     LEFT JOIN fb_pages fp ON fp.id = o.fb_page_id
     WHERE o.order_id = ?
 ");
@@ -185,6 +186,11 @@ include __DIR__ . '/../../components/head.php';
             Placed <?= date('d M Y, h:i A', strtotime($order['created_at'])) ?>
             <?= $order['created_name'] ? ' by ' . e($order['created_name']) : '' ?>
           </p>
+          <?php if ($order['edited_by']): ?>
+          <p style="font-size:.78rem;color:var(--text-muted);margin-top:1px">
+            Edited <?= date('d M Y, h:i A', strtotime($order['edited_at'])) ?><?= $order['edited_name'] ? ' by ' . e($order['edited_name']) : '' ?>
+          </p>
+          <?php endif; ?>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <select id="statusDropdown" class="form-control"

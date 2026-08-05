@@ -708,12 +708,14 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             UPDATE orders SET
                 customer_name=?, customer_phone=?, customer_email=?, customer_address=?, fb_page_id=?,
                 subtotal=?, discount=?, discount_type=?, extra_charge=?, shipping_cost=?, shipping_method=?,
-                courier_name=?, total=?, payment_method=?, payment_status=?, amount_paid=?, remarks=?, updated_by=?
+                courier_name=?, total=?, payment_method=?, payment_status=?, amount_paid=?, remarks=?,
+                updated_by=?, edited_by=?, edited_at=NOW()
             WHERE id=?
         ")->execute([
             $customer_name, $customer_phone ?: null, $customer_email ?: null, $customer_address ?: null, $fb_page_id,
             $subtotal, $discountAmount, $discount_type, $extra_charge, $shipping_cost, $shipping_method ?: null,
-            $courier_name ?: null, $total, $payment_method, $payment_status, $amount_paid, $remarks ?: null, $user['id'],
+            $courier_name ?: null, $total, $payment_method, $payment_status, $amount_paid, $remarks ?: null,
+            $user['id'], $user['id'],
             $existing['id'],
         ]);
 
