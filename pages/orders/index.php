@@ -19,6 +19,10 @@ $courier    = trim($_GET['courier'] ?? '');
 $page       = max(1, (int)($_GET['page'] ?? 1));
 $perPage    = 15;
 
+// Carried onto View so "Back to Orders" can return to this exact filtered/
+// paginated view instead of resetting to the unfiltered default list.
+$returnQS = $_SERVER['QUERY_STRING'] ?? '';
+
 $validStatuses    = ['new','confirmed','pending','cancelled','dispatched','in_courier','delivered','returned'];
 $editableStatuses = ['new','pending','confirmed'];
 
@@ -371,7 +375,7 @@ include __DIR__ . '/../../components/head.php';
               <td><input type="checkbox" class="order-select-checkbox" value="<?= e($o['order_id']) ?>" onchange="updateBulkDeleteButton()"></td>
               <?php endif; ?>
               <td>
-                <a href="<?= APP_URL ?>/pages/orders/view.php?id=<?= urlencode($o['order_id']) ?>"
+                <a href="<?= APP_URL ?>/pages/orders/view.php?id=<?= urlencode($o['order_id']) ?>&return=<?= urlencode($returnQS) ?>"
                    style="font-weight:700;color:var(--primary);font-size:.64rem"><?= e($o['order_id']) ?></a>
               </td>
               <td>
@@ -475,7 +479,7 @@ include __DIR__ . '/../../components/head.php';
               </td>
               <td>
                 <div style="display:flex;gap:5px;align-items:center">
-                  <a href="<?= APP_URL ?>/pages/orders/view.php?id=<?= urlencode($o['order_id']) ?>" class="btn btn-outline btn-xs">View</a>
+                  <a href="<?= APP_URL ?>/pages/orders/view.php?id=<?= urlencode($o['order_id']) ?>&return=<?= urlencode($returnQS) ?>" class="btn btn-outline btn-xs">View</a>
                   <?php if (in_array($o['status'], $editableStatuses, true)): ?>
                   <a href="<?= APP_URL ?>/pages/orders/create.php?edit=<?= urlencode($o['order_id']) ?>" class="btn btn-outline btn-xs">Edit</a>
                   <?php endif; ?>

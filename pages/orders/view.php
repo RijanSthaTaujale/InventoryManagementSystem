@@ -13,6 +13,11 @@ $currency   = 'Rs';
 $orderId = trim($_GET['id'] ?? '');
 if (!$orderId) redirect('/pages/orders/index.php');
 
+// Carries the Orders list's filter/pagination state back through "Back to
+// Orders" so returning here doesn't reset to the unfiltered default list.
+$returnTo = trim($_GET['return'] ?? '');
+$backUrl  = APP_URL . '/pages/orders/index.php' . ($returnTo ? '?' . $returnTo : '');
+
 $stmt = $pdo->prepare("
     SELECT o.*, u1.name AS assigned_name, u2.name AS dispatched_name, u3.name AS created_name, fp.name AS fb_page_name
     FROM orders o
@@ -163,7 +168,7 @@ include __DIR__ . '/../../components/head.php';
       <div class="flex-between mb-4">
         <div>
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-            <a href="<?= APP_URL ?>/pages/orders/index.php" style="color:var(--text);font-size:.92rem;font-weight:700;display:flex;align-items:center;gap:4px">
+            <a href="<?= e($backUrl) ?>" style="color:var(--text);font-size:.92rem;font-weight:700;display:flex;align-items:center;gap:4px">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg> Orders
             </a>
             <span style="color:var(--text-muted);font-size:.82rem">/</span>
