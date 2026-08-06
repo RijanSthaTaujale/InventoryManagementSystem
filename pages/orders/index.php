@@ -78,7 +78,7 @@ $stmt = $pdo->prepare("
     LEFT JOIN fb_pages fp ON fp.id = o.fb_page_id
     $whereSQL
     GROUP BY o.id
-    ORDER BY o.created_at DESC
+    ORDER BY o.updated_at DESC
     LIMIT $perPage OFFSET $offset
 ");
 $stmt->execute($params);
@@ -231,7 +231,7 @@ include __DIR__ . '/../../components/head.php';
             Export CSV
           </a>
           <?php if ($isAdmin || $isSuper): ?>
-          <button onclick="moveAllToCourier()" class="btn btn-outline" id="moveAllCourierBtn">
+          <button onclick="openMoveAllCourierModal()" class="btn btn-outline" id="moveAllCourierBtn">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
             Move All to In Courier
           </button>
@@ -379,8 +379,8 @@ include __DIR__ . '/../../components/head.php';
                    style="font-weight:700;color:var(--primary);font-size:.64rem"><?= e($o['order_id']) ?></a>
               </td>
               <td>
-                <div style="font-size:.8rem"><?= date('d M Y', strtotime($o['created_at'])) ?></div>
-                <div style="font-size:.72rem;color:var(--text-muted)"><?= date('h:i A', strtotime($o['created_at'])) ?></div>
+                <div style="font-size:.8rem"><?= date('d M Y', strtotime($o['updated_at'])) ?></div>
+                <div style="font-size:.72rem;color:var(--text-muted)"><?= date('h:i A', strtotime($o['updated_at'])) ?></div>
               </td>
               <td>
                 <div style="font-weight:600;font-size:.85rem"><?= e($o['customer_name']) ?></div>
@@ -511,6 +511,23 @@ include __DIR__ . '/../../components/head.php';
 </div>
 
 <?php if ($isAdmin || $isSuper): ?>
+<!-- Move All to In Courier confirm modal -->
+<div id="moveAllCourierModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:var(--radius-xl);padding:28px;max-width:400px;width:90%;box-shadow:var(--shadow-md);text-align:center">
+    <div style="width:48px;height:48px;border-radius:50%;background:#dcfce7;display:flex;align-items:center;justify-content:center;margin:0 auto 16px">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+    </div>
+    <div style="font-size:1.05rem;font-weight:700;margin-bottom:6px">Move All to In Courier?</div>
+    <p style="font-size:.86rem;color:var(--text-secondary);margin-bottom:20px">
+      This moves all <strong><?= $statusCounts['dispatched'] ?? 0 ?></strong> currently <strong>Dispatched</strong> order(s) to <strong>In Courier</strong>. This can't be undone in bulk.
+    </p>
+    <div style="display:flex;gap:10px;justify-content:center">
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('moveAllCourierModal').style.display='none'">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="moveAllToCourier()">Yes, Move All</button>
+    </div>
+  </div>
+</div>
+
 <!-- Bulk Deliver by ID modal -->
 <div id="bulkDeliverModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:var(--radius-xl);padding:28px;max-width:440px;width:90%;box-shadow:var(--shadow-md)">
@@ -611,7 +628,12 @@ async function onStatusChange(selectEl) {
 }
 
 <?php if ($isAdmin || $isSuper): ?>
+function openMoveAllCourierModal() {
+  document.getElementById('moveAllCourierModal').style.display = 'flex';
+}
+
 async function moveAllToCourier() {
+  document.getElementById('moveAllCourierModal').style.display = 'none';
   const btn = document.getElementById('moveAllCourierBtn');
   btn.disabled = true;
   const res  = await fetch(`${APP_URL}/api/orders.php?action=move_all_to_courier`, { method: 'POST' });
