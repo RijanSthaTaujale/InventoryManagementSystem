@@ -87,7 +87,23 @@ foreach ($dispatchedByDayStmt->fetchAll() as $row) {
     $dispatchedByDay[$row['day']] = $row;
 }
 
-// ── Top products (dispatch-based — same reasoning as revenue above) ──
+// ── Product performance, full list (dispatch-based — same reasoning as
+// revenue above), paginated. Same date range as the rest of the page.
+$ppPage    = max(1, (int)($_GET['page'] ?? 1));
+$ppPerPage = 25;
+
+$ppCountStmt = $pdo->prepare("
+    SELECT COUNT(DISTINCT oi.product_id)
+    FROM order_items oi
+    JOIN orders o ON o.id = oi.order_id
+    WHERE o.dispatched_at BETWEEN ? AND ?
+");
+$ppCountStmt->execute([$dFrom,$dTo]);
+$ppTotal      = (int)$ppCountStmt->fetchColumn();
+$ppTotalPages = max(1, ceil($ppTotal / $ppPerPage));
+$ppPage       = min($ppPage, $ppTotalPages);
+$ppOffset     = ($ppPage - 1) * $ppPerPage;
+
 $topProducts = $pdo->prepare("
     SELECT p.name, p.product_id, p.image_url, p.sell_price, p.buy_price,
            SUM(oi.qty) AS sold_qty,
@@ -98,10 +114,14 @@ $topProducts = $pdo->prepare("
     JOIN products p ON p.id = oi.product_id
     WHERE o.dispatched_at BETWEEN ? AND ?
     GROUP BY oi.product_id
-    ORDER BY sold_qty DESC LIMIT 10
+    ORDER BY sold_qty DESC LIMIT $ppPerPage OFFSET $ppOffset
 ");
 $topProducts->execute([$dFrom,$dTo]);
 $topProducts = $topProducts->fetchAll();
+
+$ppBaseUrl = APP_URL . '/pages/reports/index.php?' . http_build_query(array_filter([
+    'date_from' => $dateFrom, 'date_to' => $dateTo
+]));
 
 // ── Orders by status ─────────────────────────────────────────
 $byStatus = $pdo->prepare("
@@ -255,8 +275,12 @@ include __DIR__ . '/../../components/head.php';
         <div class="card-header">
           <div>
             <div class="card-title">Product Performance List</div>
-            <div class="card-sub">Showing top <?= count($topProducts) ?> products</div>
+            <div class="card-sub"><?= number_format($ppTotal) ?> product<?= $ppTotal!=1?'s':'' ?> sold in this range</div>
           </div>
+          <a href="<?= APP_URL ?>/api/reports.php?action=export_product_performance&<?= http_build_query(['date_from'=>$dateFrom,'date_to'=>$dateTo]) ?>" class="btn btn-outline btn-sm">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:4px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Export CSV
+          </a>
         </div>
         <?php if (empty($topProducts)): ?>
         <div style="text-align:center;padding:40px;color:var(--text-muted);font-size:.85rem">No sales data for this period</div>
@@ -319,6 +343,12 @@ include __DIR__ . '/../../components/head.php';
             </tbody>
           </table>
         </div>
+        <?php
+          $page       = $ppPage;
+          $totalPages = $ppTotalPages;
+          $baseUrl    = $ppBaseUrl;
+          include __DIR__ . '/../../components/pagination.php';
+        ?>
         <?php endif; ?>
       </div>
 
