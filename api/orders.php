@@ -1102,8 +1102,8 @@ if ($action === 'export_csv' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     if ($status === 'exchanged') {
         $where[] = "EXISTS (SELECT 1 FROM order_returns r WHERE r.order_id = o.id AND r.new_order_id IS NOT NULL)";
     } elseif ($status && in_array($status, $validStatuses)) { $where[] = "o.status = ?"; $params[] = $status; }
-    if ($dateFrom) { $where[] = "DATE(o.created_at) >= ?"; $params[] = $dateFrom; }
-    if ($dateTo)   { $where[] = "DATE(o.created_at) <= ?"; $params[] = $dateTo; }
+    if ($dateFrom) { $where[] = "DATE(o.updated_at) >= ?"; $params[] = $dateFrom; }
+    if ($dateTo)   { $where[] = "DATE(o.updated_at) <= ?"; $params[] = $dateTo; }
     if ($courier)  { $where[] = "o.courier_name = ?"; $params[] = $courier; }
 
     $whereSQL = 'WHERE ' . implode(' AND ', $where);
@@ -1120,7 +1120,7 @@ if ($action === 'export_csv' && $_SERVER['REQUEST_METHOD'] === 'GET') {
         LEFT JOIN fb_pages fp ON fp.id = o.fb_page_id
         $whereSQL
         GROUP BY o.id
-        ORDER BY o.created_at DESC
+        ORDER BY o.updated_at DESC
     ");
     $stmt->execute($params);
     $rows = $stmt->fetchAll();

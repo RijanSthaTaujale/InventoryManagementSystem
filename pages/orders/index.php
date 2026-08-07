@@ -45,8 +45,8 @@ if ($status === 'exchanged') {
     $where[]  = "o.status = ?";
     $params[] = $status;
 }
-if ($dateFrom) { $where[] = "DATE(o.created_at) >= ?"; $params[] = $dateFrom; }
-if ($dateTo)   { $where[] = "DATE(o.created_at) <= ?"; $params[] = $dateTo; }
+if ($dateFrom) { $where[] = "DATE(o.updated_at) >= ?"; $params[] = $dateFrom; }
+if ($dateTo)   { $where[] = "DATE(o.updated_at) <= ?"; $params[] = $dateTo; }
 if ($courier)  { $where[] = "o.courier_name = ?"; $params[] = $courier; }
 
 $whereSQL = 'WHERE ' . implode(' AND ', $where);
